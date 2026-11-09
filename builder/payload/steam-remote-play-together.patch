@@ -1,0 +1,1898 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 04d0f17..1f29801 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -269,6 +269,10 @@ option(ENABLE_WIFI_SCAN "Enable WiFi scanning" OFF)
+ 
+ cmake_dependent_option(USE_DISCORD_PRESENCE "Enables Discord Rich Presence" OFF "ENABLE_QT" OFF)
+ 
++# Needs the Steamworks SDK, which can't be bundled. Builds with this on link a proprietary
++# library and must not be distributed, see docs/SteamRemotePlay.md.
++cmake_dependent_option(ENABLE_STEAM_REMOTE_PLAY "Enable Steam Remote Play Together (requires the Steamworks SDK)" OFF "ENABLE_QT" OFF)
++
+ option(YUZU_TESTS "Compile tests" "${BUILD_TESTING}")
+ 
+ # Install udev rules on Linux (mainly for gyros)
+@@ -596,6 +600,10 @@ if (NOT YUZU_STATIC_ROOM)
+         find_package(DiscordRPC)
+     endif()
+ 
++    if (ENABLE_STEAM_REMOTE_PLAY)
++        find_package(Steamworks REQUIRED)
++    endif()
++
+     if (ENABLE_CUBEB)
+         find_package(cubeb)
+     endif()
+diff --git a/CMakeModules/find/FindSteamworks.cmake b/CMakeModules/find/FindSteamworks.cmake
+new file mode 100644
+index 0000000..6d0a804
+--- /dev/null
++++ b/CMakeModules/find/FindSteamworks.cmake
+@@ -0,0 +1,69 @@
++# SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
++# SPDX-License-Identifier: GPL-3.0-or-later
++
++# Finds the Steamworks SDK in STEAMWORKS_SDK_DIR, the "sdk" folder of the SDK download.
++# Valve's license only allows redistributing redistributable_bin, so the SDK is never fetched or
++# vendored; every developer downloads it from https://partner.steamgames.com/.
++#
++# Provides Steamworks::steam_api and Steamworks_RUNTIME, the library to copy next to the program.
++
++set(STEAMWORKS_SDK_DIR "" CACHE PATH "The sdk folder of the Steamworks SDK (1.62 or newer)")
++
++if (WIN32)
++    set(_steamworks_bin "${STEAMWORKS_SDK_DIR}/redistributable_bin/win64")
++    set(_steamworks_name steam_api64)
++elseif (APPLE)
++    set(_steamworks_bin "${STEAMWORKS_SDK_DIR}/redistributable_bin/osx")
++    set(_steamworks_name steam_api)
++elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
++    set(_steamworks_bin "${STEAMWORKS_SDK_DIR}/redistributable_bin/linuxarm64")
++    set(_steamworks_name steam_api)
++else()
++    set(_steamworks_bin "${STEAMWORKS_SDK_DIR}/redistributable_bin/linux64")
++    set(_steamworks_name steam_api)
++endif()
++
++find_path(Steamworks_INCLUDE_DIR steam/steam_api.h
++    HINTS "${STEAMWORKS_SDK_DIR}/public" NO_DEFAULT_PATH)
++find_library(Steamworks_LIBRARY ${_steamworks_name} HINTS "${_steamworks_bin}" NO_DEFAULT_PATH)
++if (WIN32)
++    find_file(Steamworks_RUNTIME ${_steamworks_name}.dll HINTS "${_steamworks_bin}" NO_DEFAULT_PATH)
++else()
++    set(Steamworks_RUNTIME "${Steamworks_LIBRARY}")
++endif()
++
++# The Remote Play Together input API arrived in SDK 1.62
++set(Steamworks_HAS_REMOTE_PLAY_INPUT FALSE)
++if (Steamworks_INCLUDE_DIR AND EXISTS "${Steamworks_INCLUDE_DIR}/steam/isteamremoteplay.h")
++    file(STRINGS "${Steamworks_INCLUDE_DIR}/steam/isteamremoteplay.h" _steamworks_direct_input
++        REGEX "BEnableRemotePlayTogetherDirectInput")
++    if (_steamworks_direct_input)
++        set(Steamworks_HAS_REMOTE_PLAY_INPUT TRUE)
++    endif()
++endif()
++
++include(FindPackageHandleStandardArgs)
++find_package_handle_standard_args(Steamworks
++    REQUIRED_VARS
++        Steamworks_LIBRARY
++        Steamworks_RUNTIME
++        Steamworks_INCLUDE_DIR
++        Steamworks_HAS_REMOTE_PLAY_INPUT
++    REASON_FAILURE_MESSAGE
++        "Set STEAMWORKS_SDK_DIR to the sdk folder of the Steamworks SDK, version 1.62 or newer")
++
++if (Steamworks_FOUND AND NOT TARGET Steamworks::steam_api)
++    add_library(Steamworks::steam_api SHARED IMPORTED)
++    set_target_properties(Steamworks::steam_api PROPERTIES
++        INTERFACE_INCLUDE_DIRECTORIES "${Steamworks_INCLUDE_DIR}")
++    if (WIN32)
++        set_target_properties(Steamworks::steam_api PROPERTIES
++            IMPORTED_LOCATION "${Steamworks_RUNTIME}"
++            IMPORTED_IMPLIB "${Steamworks_LIBRARY}")
++    else()
++        set_target_properties(Steamworks::steam_api PROPERTIES
++            IMPORTED_LOCATION "${Steamworks_LIBRARY}")
++    endif()
++endif()
++
++mark_as_advanced(Steamworks_INCLUDE_DIR Steamworks_LIBRARY Steamworks_RUNTIME)
+diff --git a/docs/Options.md b/docs/Options.md
+index ece6bde..0d83a5e 100644
+--- a/docs/Options.md
++++ b/docs/Options.md
+@@ -91,6 +91,10 @@ Also desktop-only, but apply strictly to Qt
+ - `YUZU_USE_QT_MULTIMEDIA` (OFF) Use QtMultimedia for camera support
+ - `YUZU_USE_QT_WEB_ENGINE` (OFF) Use QtWebEngine for web applet implementation (requires the huge QtWebEngine dependency; not recommended)
+ - `USE_DISCORD_PRESENCE` (OFF) Enables Discord Rich Presence (Qt frontend only)
++- `ENABLE_STEAM_REMOTE_PLAY` (OFF) Enables Steam Remote Play Together, see [Steam Remote Play Together](./SteamRemotePlay.md)
++  - Builds with this on must not be distributed
++  - `STEAMWORKS_SDK_DIR` (path) The `sdk` folder of the Steamworks SDK, 1.62 or newer
++  - `STEAM_REMOTE_PLAY_APPID` (number, required) A Steam App ID you own or are explicitly authorized to use; *Multiplayer > Change Steam App ID...* changes it for later starts
+ 
+ ### Retired Options
+ 
+diff --git a/docs/README.md b/docs/README.md
+index 5bcaf30..ac139fb 100644
+--- a/docs/README.md
++++ b/docs/README.md
+@@ -8,6 +8,7 @@ This contains documentation created by developers, build instructions, guideline
+ 
+ - **[General Build Instructions](./Build.md)**
+ - **[CMake Options](./Options.md)**
++- **[Steam Remote Play Together](./SteamRemotePlay.md)**
+ - **[Cross Compiling](./CrossCompile.md)**
+ - **[Development Guidelines](./Development.md)**
+ - **[Dependencies](./Deps.md)**
+diff --git a/docs/SteamRemotePlay.md b/docs/SteamRemotePlay.md
+new file mode 100644
+index 0000000..617ecc0
+--- /dev/null
++++ b/docs/SteamRemotePlay.md
+@@ -0,0 +1,120 @@
++# Steam Remote Play Together
++
++Eglantine can host a Steam Remote Play Together session: friends watch the stream and play with
++their own controllers as if they were sitting next to you. Each guest's controller becomes the next
++free player, starting at Player 2.
++
++> [!WARNING]
++> This build option links Valve's proprietary Steamworks library into a GPL program. Build it for
++> yourself only: a binary built with it must not be shared or published. Valve's SDK license also
++> forbids committing the SDK to a repository, so it is never downloaded or vendored by the build.
++> Shipping this officially would require a separately licensed process for the Steam integration.
++>
++> You must have an App ID that you own or that its owner has explicitly authorized you to use, and
++> it must be configured for Remote Play Together. This patch does not grant permission to use
++> another game's App ID or Steamworks services.
++
++## How guests reach the emulator
++
++- **Controllers**: Steam turns every guest controller into a virtual gamepad on your PC, which
++  Eglantine reads through SDL like any other controller. SDL hides these gamepads unless Steam
++  started the game, so Eglantine tells SDL to accept them while Steam is connected.
++- **Keyboards**: guest keyboards are kept out of your own keyboard and hotkeys. Each guest keyboard
++  shows up under *Emulation > Configure > Controls > Input Device* as
++  `Remote Play keyboard N (name)`, with the same default keys as the local keyboard. They are not
++  given a player automatically.
++- **Mice**: unused, and their cursors are hidden.
++
++## Building
++
++1. Obtain the Steamworks SDK through access authorized by Valve, accept its license, and download
++   SDK version 1.62 or newer. Unzip it outside the source tree.
++2. Use an App ID that you own or are explicitly authorized to use and that its owner configured for
++   Remote Play Together.
++3. Configure with the option on, pointing at the `sdk` folder and supplying that App ID:
++
++    ```sh
++    cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
++        -DENABLE_STEAM_REMOTE_PLAY=ON \
++        -DSTEAMWORKS_SDK_DIR=C:/path/to/steamworks/sdk \
++        -DSTEAM_REMOTE_PLAY_APPID=<your-authorized-app-id>
++    cmake --build build
++    ```
++
++The build copies `steam_api64.dll` (Windows), `libsteam_api.so` (Linux) or `libsteam_api.dylib`
++(macOS) next to the executable. Keep it there, but do not distribute the resulting build.
++
++## Choosing the App ID
++
++Steam shows Eglantine as the game with the App ID it runs as, and gives every controller that
++game's Steam Input layout. The App ID must belong to you or be explicitly authorized by its owner,
++and the application must be configured for Remote Play Together. This feature does not bypass
++Steam entitlement or app configuration checks.
++
++To run as another authorized App ID, open *Multiplayer > Change Steam App ID...*, enter the number,
++then restart Eglantine. The menu entry is there also when Steam refused to connect, so an incorrect
++App ID can be fixed. The choice is saved in `steam_remote_play_appid.txt`, next to your own
++`nx2_switches.txt` (`%APPDATA%\eglantine` on Windows); delete the file to go back to the build
++setting.
++
++When more than one of these is set, the first one wins:
++
++1. The `SteamAppId` environment variable, which Steam sets when it starts Eglantine. A
++   `SteamAppId=<number>` line in `nx2_switches.txt` sets it too.
++2. The App ID chosen in the Multiplayer menu.
++3. A `steam_appid.txt` with the number in the folder you start Eglantine from.
++4. `STEAM_REMOTE_PLAY_APPID` supplied at build time.
++
++## Hosting a session
++
++1. Start Steam and sign in with an account permitted to use the selected App ID.
++2. Start Eglantine directly, not from a Steam library shortcut, unless the authorized application
++   owner instructs otherwise. It connects to Steam on startup; the log says which App ID it runs
++   as. If Steam isn't reachable, the Multiplayer menu shows *Remote Play Together (Steam not
++   connected)*, and the log and *Change Steam App ID...* show the reason.
++3. Open *Multiplayer > Invite Friends to Remote Play Together...* to pick friends in the Steam
++   overlay, or *Multiplayer > Copy Remote Play Guest Link* for a link that anyone can open in Steam
++   or the free Steam Link app. Each link lets one person join. *Invite Anyone to Play* in the
++   friends list of the Steam overlay (Shift+Tab) makes the same kind of link.
++4. The status bar shows the guest count. Hover it to see who is connected and which player each
++   guest controller got.
++
++When a guest leaves, their player gets back the controls it had before. The same happens when you
++close Eglantine, also in the saved configuration.
++
++### Guest controllers do nothing
++
++Steam gives each controller the Steam Input layout configured for the authorized App ID. If a
++controller does not act like a normal gamepad, press Shift+Tab, open *Controller Settings*, and
++choose a *Gamepad* template for every controller listed, yours and each guest's. Steam remembers
++this per controller type. Guest controllers appear in that list only after the guest has joined.
++
++### Your own controller stops working
++
++While Steam is connected, Steam Input can also turn your own controller into a virtual gamepad and
++hide the real one. When every controller Player 1 is mapped to disappears like this, Player 1 gets
++your virtual gamepad, and its own controls back once Steam lets go of the controller or Eglantine
++closes. Turn your controllers on before guests join: a virtual gamepad that appears in the 5
++seconds before the first guest joins, or later, is treated as a guest controller. If Player 1
++still doesn't respond, pick your controller again in *Emulation > Configure > Controls*, or turn
++off Steam Input for it in the Steam overlay menu above.
++
++### More than three guests on Windows
++
++Steam hands guest controllers over through XInput, which has 4 slots, yours included. *Emulation >
++Configure > Controls > Advanced > Enable XInput 8 player support* (restart needed) lets SDL see
++more controllers.
++
++## Testing without a second PC
++
++1. Build and start Eglantine with an authorized App ID as above.
++2. Create a guest link from the Multiplayer menu.
++3. Open the link on a phone or tablet with the Steam Link app, or in Steam on another computer
++   signed in to a second account. Use a controller there, or the touch controls of Steam Link.
++4. Check that the status bar counts one guest, that the guest controller became Player 2 (hover the
++   status bar or open *Emulation > Configure > Controls*), and that Player 2 moves in a local
++   multiplayer game.
++
++If Steam refuses to open the invite or create a link, Eglantine says so. Steam can refuse when the
++overlay is off, the account is not permitted to use the App ID, or the application is not configured
++for Remote Play Together.
+diff --git a/src/input_common/CMakeLists.txt b/src/input_common/CMakeLists.txt
+index 840602f..ff151bc 100644
+--- a/src/input_common/CMakeLists.txt
++++ b/src/input_common/CMakeLists.txt
+@@ -83,6 +83,14 @@ else()
+     target_compile_definitions(input_common PRIVATE HAVE_SDL3)
+ endif()
+ 
++if (ENABLE_STEAM_REMOTE_PLAY)
++    target_sources(input_common PRIVATE
++        drivers/remote_play_keyboard.cpp
++        drivers/remote_play_keyboard.h)
++
++    target_compile_definitions(input_common PRIVATE HAVE_REMOTE_PLAY_KEYBOARD)
++endif()
++
+ if (ENABLE_LIBUSB)
+     target_sources(input_common PRIVATE
+         drivers/gc_adapter.cpp
+diff --git a/src/input_common/drivers/remote_play_keyboard.cpp b/src/input_common/drivers/remote_play_keyboard.cpp
+new file mode 100644
+index 0000000..0201722
+--- /dev/null
++++ b/src/input_common/drivers/remote_play_keyboard.cpp
+@@ -0,0 +1,227 @@
++// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++#include <utility>
++
++#include <fmt/format.h>
++
++#include "common/param_package.h"
++#include "common/settings_input.h"
++#include "input_common/drivers/remote_play_keyboard.h"
++
++namespace InputCommon {
++
++namespace {
++
++// USB HID usage IDs of the keys used by the default layout
++namespace Usage {
++constexpr int A = 0x04;
++constexpr int C = 0x06;
++constexpr int D = 0x07;
++constexpr int E = 0x08;
++constexpr int F = 0x09;
++constexpr int G = 0x0A;
++constexpr int I = 0x0C;
++constexpr int J = 0x0D;
++constexpr int K = 0x0E;
++constexpr int L = 0x0F;
++constexpr int M = 0x10;
++constexpr int N = 0x11;
++constexpr int Q = 0x14;
++constexpr int R = 0x15;
++constexpr int S = 0x16;
++constexpr int T = 0x17;
++constexpr int V = 0x19;
++constexpr int W = 0x1A;
++constexpr int X = 0x1B;
++constexpr int Z = 0x1D;
++constexpr int Seven = 0x24;
++constexpr int Eight = 0x25;
++constexpr int Right = 0x4F;
++constexpr int Left = 0x50;
++constexpr int Down = 0x51;
++constexpr int Up = 0x52;
++constexpr int LeftShift = 0xE1;
++} // namespace Usage
++
++// Same keys as the default keyboard bindings of the Qt frontend
++constexpr std::array<std::pair<Settings::NativeButton::Values, int>, 20> DefaultButtons{{
++    {Settings::NativeButton::A, Usage::C},
++    {Settings::NativeButton::B, Usage::X},
++    {Settings::NativeButton::X, Usage::V},
++    {Settings::NativeButton::Y, Usage::Z},
++    {Settings::NativeButton::LStick, Usage::F},
++    {Settings::NativeButton::RStick, Usage::G},
++    {Settings::NativeButton::L, Usage::Q},
++    {Settings::NativeButton::R, Usage::E},
++    {Settings::NativeButton::ZL, Usage::R},
++    {Settings::NativeButton::ZR, Usage::T},
++    {Settings::NativeButton::Plus, Usage::M},
++    {Settings::NativeButton::Minus, Usage::N},
++    {Settings::NativeButton::DLeft, Usage::Left},
++    {Settings::NativeButton::DUp, Usage::Up},
++    {Settings::NativeButton::DRight, Usage::Right},
++    {Settings::NativeButton::DDown, Usage::Down},
++    {Settings::NativeButton::SLLeft, Usage::Q},
++    {Settings::NativeButton::SRLeft, Usage::E},
++    {Settings::NativeButton::SLRight, Usage::Q},
++    {Settings::NativeButton::SRRight, Usage::E},
++}};
++
++struct StickKeys {
++    Settings::NativeAnalog::Values stick;
++    int up;
++    int down;
++    int left;
++    int right;
++    int modifier;
++};
++
++constexpr std::array<StickKeys, 2> DefaultSticks{{
++    {Settings::NativeAnalog::LStick, Usage::W, Usage::S, Usage::A, Usage::D, Usage::LeftShift},
++    {Settings::NativeAnalog::RStick, Usage::I, Usage::K, Usage::J, Usage::L, 0},
++}};
++
++constexpr std::array<std::pair<Settings::NativeMotion::Values, int>, 2> DefaultMotions{{
++    {Settings::NativeMotion::MotionLeft, Usage::Seven},
++    {Settings::NativeMotion::MotionRight, Usage::Eight},
++}};
++
++constexpr PadIdentifier GetIdentifier(std::size_t slot) {
++    return {
++        .guid = Common::UUID{},
++        .port = slot,
++        .pad = 0,
++    };
++}
++
++} // Anonymous namespace
++
++RemotePlayKeyboard::RemotePlayKeyboard(std::string input_engine_)
++    : InputEngine(std::move(input_engine_)) {
++    for (std::size_t slot = 0; slot < MaxGuests; ++slot) {
++        PreSetController(GetIdentifier(slot));
++    }
++}
++
++void RemotePlayKeyboard::ConnectGuest(std::size_t slot, std::string name) {
++    if (slot >= MaxGuests) {
++        return;
++    }
++    std::scoped_lock lock{mutex};
++    guest_names[slot] = std::move(name);
++    guest_connected[slot] = true;
++}
++
++void RemotePlayKeyboard::DisconnectGuest(std::size_t slot) {
++    if (slot >= MaxGuests) {
++        return;
++    }
++    std::bitset<MaxUsage> keys;
++    {
++        std::scoped_lock lock{mutex};
++        keys = held_keys[slot];
++        held_keys[slot].reset();
++        guest_names[slot].clear();
++        guest_connected[slot] = false;
++    }
++    for (std::size_t usage = 0; usage < MaxUsage; ++usage) {
++        if (keys.test(usage)) {
++            SetButton(GetIdentifier(slot), static_cast<int>(usage), false);
++        }
++    }
++}
++
++void RemotePlayKeyboard::SetKey(std::size_t slot, int usage, bool pressed) {
++    if (slot >= MaxGuests || usage <= 0 || usage >= static_cast<int>(MaxUsage)) {
++        return;
++    }
++    {
++        std::scoped_lock lock{mutex};
++        if (!guest_connected[slot]) {
++            return;
++        }
++        held_keys[slot].set(static_cast<std::size_t>(usage), pressed);
++    }
++    SetButton(GetIdentifier(slot), usage, pressed);
++}
++
++std::vector<Common::ParamPackage> RemotePlayKeyboard::GetInputDevices() const {
++    std::vector<Common::ParamPackage> devices;
++    std::scoped_lock lock{mutex};
++    for (std::size_t slot = 0; slot < MaxGuests; ++slot) {
++        if (!guest_connected[slot]) {
++            continue;
++        }
++        devices.emplace_back(Common::ParamPackage{
++            {"engine", GetEngineName()},
++            {"display", fmt::format("Remote Play keyboard {} ({})", slot + 1, guest_names[slot])},
++            {"port", std::to_string(slot)},
++        });
++    }
++    return devices;
++}
++
++Common::ParamPackage RemotePlayKeyboard::BuildKeyParam(std::size_t slot, int usage) const {
++    Common::ParamPackage param;
++    param.Set("engine", GetEngineName());
++    param.Set("port", static_cast<int>(slot));
++    param.Set("button", usage);
++    return param;
++}
++
++ButtonMapping RemotePlayKeyboard::GetButtonMappingForDevice(const Common::ParamPackage& params) {
++    if (!params.Has("port")) {
++        return {};
++    }
++    const auto slot = static_cast<std::size_t>(params.Get("port", 0));
++    ButtonMapping mapping;
++    for (const auto& [button, usage] : DefaultButtons) {
++        mapping.insert_or_assign(button, BuildKeyParam(slot, usage));
++    }
++    return mapping;
++}
++
++AnalogMapping RemotePlayKeyboard::GetAnalogMappingForDevice(const Common::ParamPackage& params) {
++    if (!params.Has("port")) {
++        return {};
++    }
++    const auto slot = static_cast<std::size_t>(params.Get("port", 0));
++    AnalogMapping mapping;
++    for (const auto& keys : DefaultSticks) {
++        Common::ParamPackage stick{
++            {"engine", "analog_from_button"},
++            {"up", BuildKeyParam(slot, keys.up).Serialize()},
++            {"down", BuildKeyParam(slot, keys.down).Serialize()},
++            {"left", BuildKeyParam(slot, keys.left).Serialize()},
++            {"right", BuildKeyParam(slot, keys.right).Serialize()},
++        };
++        if (keys.modifier != 0) {
++            stick.Set("modifier", BuildKeyParam(slot, keys.modifier).Serialize());
++            stick.Set("modifier_scale", 0.5f);
++        }
++        mapping.insert_or_assign(keys.stick, std::move(stick));
++    }
++    return mapping;
++}
++
++MotionMapping RemotePlayKeyboard::GetMotionMappingForDevice(const Common::ParamPackage& params) {
++    if (!params.Has("port")) {
++        return {};
++    }
++    const auto slot = static_cast<std::size_t>(params.Get("port", 0));
++    MotionMapping mapping;
++    for (const auto& [motion, usage] : DefaultMotions) {
++        mapping.insert_or_assign(motion, BuildKeyParam(slot, usage));
++    }
++    return mapping;
++}
++
++Common::Input::ButtonNames RemotePlayKeyboard::GetUIName(const Common::ParamPackage& params) const {
++    if (params.Has("button")) {
++        return Common::Input::ButtonNames::Value;
++    }
++    return Common::Input::ButtonNames::Invalid;
++}
++
++} // namespace InputCommon
+diff --git a/src/input_common/drivers/remote_play_keyboard.h b/src/input_common/drivers/remote_play_keyboard.h
+new file mode 100644
+index 0000000..f125ea3
+--- /dev/null
++++ b/src/input_common/drivers/remote_play_keyboard.h
+@@ -0,0 +1,51 @@
++// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++#pragma once
++
++#include <array>
++#include <bitset>
++#include <mutex>
++#include <string>
++
++#include "input_common/input_engine.h"
++
++namespace InputCommon {
++
++/**
++ * Keyboards of remote players, such as Steam Remote Play Together guests. Each guest slot is a
++ * separate device. Keys are USB HID usage IDs from the Keyboard/Keypad page (0x07).
++ */
++class RemotePlayKeyboard final : public InputEngine {
++public:
++    static constexpr std::size_t MaxGuests = 8;
++
++    explicit RemotePlayKeyboard(std::string input_engine_);
++
++    /// Lists the keyboard of the guest in this slot as an input device
++    void ConnectGuest(std::size_t slot, std::string name);
++
++    /// Releases every key the guest is holding and removes the device
++    void DisconnectGuest(std::size_t slot);
++
++    /// Sets the state of a key of the guest in this slot
++    void SetKey(std::size_t slot, int usage, bool pressed);
++
++    std::vector<Common::ParamPackage> GetInputDevices() const override;
++    ButtonMapping GetButtonMappingForDevice(const Common::ParamPackage& params) override;
++    AnalogMapping GetAnalogMappingForDevice(const Common::ParamPackage& params) override;
++    MotionMapping GetMotionMappingForDevice(const Common::ParamPackage& params) override;
++    Common::Input::ButtonNames GetUIName(const Common::ParamPackage& params) const override;
++
++private:
++    static constexpr std::size_t MaxUsage = 256;
++
++    Common::ParamPackage BuildKeyParam(std::size_t slot, int usage) const;
++
++    mutable std::mutex mutex;
++    std::array<std::string, MaxGuests> guest_names{};
++    std::array<bool, MaxGuests> guest_connected{};
++    std::array<std::bitset<MaxUsage>, MaxGuests> held_keys{};
++};
++
++} // namespace InputCommon
+diff --git a/src/input_common/main.cpp b/src/input_common/main.cpp
+index 6c8443f..f4fc218 100644
+--- a/src/input_common/main.cpp
++++ b/src/input_common/main.cpp
+@@ -29,6 +29,9 @@
+ #include "input_common/drivers/joycon.h"
+ #include "input_common/drivers/sdl_driver.h"
+ #endif
++#ifdef HAVE_REMOTE_PLAY_KEYBOARD
++#include "input_common/drivers/remote_play_keyboard.h"
++#endif
+ 
+ #ifdef __ANDROID__
+ #include "input_common/drivers/android.h"
+@@ -94,6 +97,9 @@ struct InputSubsystem::Impl {
+         RegisterEngine("sdl", sdl);
+         RegisterEngine("joycon", joycon);
+ #endif
++#ifdef HAVE_REMOTE_PLAY_KEYBOARD
++        RegisterEngine("remote_play_keyboard", remote_play_keyboard);
++#endif
+ 
+         Common::Input::RegisterInputFactory("touch_from_button",
+                                             std::make_shared<TouchFromButton>());
+@@ -128,6 +134,9 @@ struct InputSubsystem::Impl {
+         UnregisterEngine(sdl);
+         UnregisterEngine(joycon);
+ #endif
++#ifdef HAVE_REMOTE_PLAY_KEYBOARD
++        UnregisterEngine(remote_play_keyboard);
++#endif
+ 
+         Common::Input::UnregisterInputFactory("touch_from_button");
+         Common::Input::UnregisterInputFactory("analog_from_button");
+@@ -160,6 +169,10 @@ struct InputSubsystem::Impl {
+         auto sdl_devices = sdl->GetInputDevices();
+         devices.insert(devices.end(), sdl_devices.begin(), sdl_devices.end());
+ #endif
++#ifdef HAVE_REMOTE_PLAY_KEYBOARD
++        auto remote_play_devices = remote_play_keyboard->GetInputDevices();
++        devices.insert(devices.end(), remote_play_devices.begin(), remote_play_devices.end());
++#endif
+ 
+         return devices;
+     }
+@@ -196,6 +209,11 @@ struct InputSubsystem::Impl {
+         if (engine == joycon->GetEngineName()) {
+             return joycon;
+         }
++#endif
++#ifdef HAVE_REMOTE_PLAY_KEYBOARD
++        if (engine == remote_play_keyboard->GetEngineName()) {
++            return remote_play_keyboard;
++        }
+ #endif
+         return nullptr;
+     }
+@@ -304,6 +322,9 @@ struct InputSubsystem::Impl {
+ #ifdef HAVE_SDL3
+         sdl->BeginConfiguration();
+         joycon->BeginConfiguration();
++#endif
++#ifdef HAVE_REMOTE_PLAY_KEYBOARD
++        remote_play_keyboard->BeginConfiguration();
+ #endif
+     }
+ 
+@@ -320,6 +341,9 @@ struct InputSubsystem::Impl {
+ #ifdef HAVE_SDL3
+         sdl->EndConfiguration();
+         joycon->EndConfiguration();
++#endif
++#ifdef HAVE_REMOTE_PLAY_KEYBOARD
++        remote_play_keyboard->EndConfiguration();
+ #endif
+     }
+ 
+@@ -355,6 +379,10 @@ struct InputSubsystem::Impl {
+     std::shared_ptr<Joycons> joycon;
+ #endif
+ 
++#ifdef HAVE_REMOTE_PLAY_KEYBOARD
++    std::shared_ptr<RemotePlayKeyboard> remote_play_keyboard;
++#endif
++
+ #ifdef __ANDROID__
+     std::shared_ptr<Android> android;
+ #endif
+@@ -438,6 +466,22 @@ const VirtualGamepad* InputSubsystem::GetVirtualGamepad() const {
+     return impl->virtual_gamepad.get();
+ }
+ 
++RemotePlayKeyboard* InputSubsystem::GetRemotePlayKeyboard() {
++#ifdef HAVE_REMOTE_PLAY_KEYBOARD
++    return impl->remote_play_keyboard.get();
++#else
++    return nullptr;
++#endif
++}
++
++const RemotePlayKeyboard* InputSubsystem::GetRemotePlayKeyboard() const {
++#ifdef HAVE_REMOTE_PLAY_KEYBOARD
++    return impl->remote_play_keyboard.get();
++#else
++    return nullptr;
++#endif
++}
++
+ std::vector<Common::ParamPackage> InputSubsystem::GetInputDevices() const {
+     return impl->GetInputDevices();
+ }
+diff --git a/src/input_common/main.h b/src/input_common/main.h
+index 3b33ef3..80c7335 100644
+--- a/src/input_common/main.h
++++ b/src/input_common/main.h
+@@ -36,6 +36,7 @@ class Android;
+ class Camera;
+ class Keyboard;
+ class Mouse;
++class RemotePlayKeyboard;
+ class TouchScreen;
+ class VirtualAmiibo;
+ class VirtualGamepad;
+@@ -125,6 +126,12 @@ public:
+     /// Retrieves the underlying virtual gamepad input device.
+     [[nodiscard]] const VirtualGamepad* GetVirtualGamepad() const;
+ 
++    /// Retrieves the keyboards of remote players, or nullptr when built without remote play.
++    [[nodiscard]] RemotePlayKeyboard* GetRemotePlayKeyboard();
++
++    /// Retrieves the keyboards of remote players, or nullptr when built without remote play.
++    [[nodiscard]] const RemotePlayKeyboard* GetRemotePlayKeyboard() const;
++
+     /**
+      * Returns all available input devices that this Factory can create a new device with.
+      * Each returned ParamPackage should have a `display` field used for display, a `engine` field
+diff --git a/src/yuzu/CMakeLists.txt b/src/yuzu/CMakeLists.txt
+index 2fd0bd1..645cdf2 100644
+--- a/src/yuzu/CMakeLists.txt
++++ b/src/yuzu/CMakeLists.txt
+@@ -262,6 +262,37 @@ if (YUZU_CRASH_DUMPS)
+     target_compile_definitions(yuzu PRIVATE YUZU_CRASH_DUMPS)
+ endif()
+ 
++if (ENABLE_STEAM_REMOTE_PLAY)
++    message(WARNING "ENABLE_STEAM_REMOTE_PLAY links the proprietary Steamworks library into a GPL "
++        "program. Don't distribute this build.")
++
++    set(STEAM_REMOTE_PLAY_APPID "" CACHE STRING
++        "Required Steam App ID that you own or are authorized to use for Remote Play Together")
++    if (NOT STEAM_REMOTE_PLAY_APPID MATCHES "^[1-9][0-9]*$")
++        message(FATAL_ERROR
++            "Set STEAM_REMOTE_PLAY_APPID to a positive Steam App ID that you own or are explicitly authorized to use")
++    endif()
++
++    target_sources(yuzu PRIVATE
++        steam_remote_play.cpp
++        steam_remote_play.h)
++
++    target_link_libraries(yuzu PRIVATE Steamworks::steam_api)
++    target_compile_definitions(yuzu PRIVATE
++        EGLANTINE_STEAM_REMOTE_PLAY
++        EGLANTINE_STEAM_APPID=${STEAM_REMOTE_PLAY_APPID})
++
++    # The Steam API library is loaded from the folder of the executable
++    add_custom_command(TARGET yuzu POST_BUILD
++        COMMAND ${CMAKE_COMMAND} -E copy_if_different
++            "${Steamworks_RUNTIME}" "$<TARGET_FILE_DIR:yuzu>"
++        VERBATIM)
++    if (UNIX AND NOT APPLE)
++        set_property(TARGET yuzu APPEND PROPERTY BUILD_RPATH "$ORIGIN")
++        set_property(TARGET yuzu APPEND PROPERTY INSTALL_RPATH "$ORIGIN")
++    endif()
++endif()
++
+ if (ENABLE_RESHADE)
+     target_sources(yuzu PRIVATE
+         configuration/configure_post_processing.cpp
+diff --git a/src/yuzu/main.cpp b/src/yuzu/main.cpp
+index 3a8b28e..ccf75b6 100644
+--- a/src/yuzu/main.cpp
++++ b/src/yuzu/main.cpp
+@@ -33,6 +33,11 @@
+ 
+ #include "main_window.h"
+ 
++#ifdef EGLANTINE_STEAM_REMOTE_PLAY
++#include "common/scope_exit.h"
++#include "yuzu/steam_remote_play.h"
++#endif
++
+ #ifdef _WIN32
+ #include <QScreen>
+ 
+@@ -264,6 +269,14 @@ int main(int argc, char* argv[]) {
+     QApplication::setStyle(QStringLiteral("windowsvista"));
+ #endif
+ 
++#ifdef EGLANTINE_STEAM_REMOTE_PLAY
++    // Before the renderer exists, so the Steam overlay can hook it
++    RemotePlayTogether::Initialize();
++    SCOPE_EXIT {
++        RemotePlayTogether::Shutdown();
++    };
++#endif
++
+     QApplication app(argc, argv);
+ 
+ #ifdef _WIN32
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index 9b3170e..4255467 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -290,6 +290,10 @@ static void RemoveTitlebarFilter() {
+ #include "yuzu/breakpad.h"
+ #endif
+ 
++#ifdef EGLANTINE_STEAM_REMOTE_PLAY
++#include "yuzu/steam_remote_play.h"
++#endif
++
+ using namespace Common::Literals;
+ 
+ #include "qt_common/discord/discord.h"
+@@ -1005,6 +1009,13 @@ void MainWindow::InitializeWidgets() {
+     statusBar()->addPermanentWidget(multiplayer_state->GetStatusText(), 0);
+     statusBar()->addPermanentWidget(multiplayer_state->GetStatusIcon(), 0);
+ 
++#ifdef EGLANTINE_STEAM_REMOTE_PLAY
++    remote_play = std::make_unique<RemotePlayTogether::Manager>(this, *input_subsystem,
++                                                               QtCommon::system->HIDCore());
++    remote_play->AddMenuActions(ui->menu_Multiplayer);
++    statusBar()->addPermanentWidget(remote_play->GetStatusLabel(), 0);
++#endif
++
+     tas_label = new QLabel();
+     tas_label->setObjectName(QStringLiteral("TASlabel"));
+     tas_label->setFocusPolicy(Qt::NoFocus);
+@@ -5071,6 +5082,13 @@ void MainWindow::closeEvent(QCloseEvent* event) {
+     if (QtCommon::emu_thread != nullptr)
+         ShutdownGame();
+ 
++#ifdef EGLANTINE_STEAM_REMOTE_PLAY
++    // Booting a game saves the configuration, guest players included, so undo them on disk too
++    if (remote_play->Close()) {
++        config->SaveAllValues();
++    }
++#endif
++
+     render_window->close();
+     multiplayer_state->Close();
+     QtCommon::system->HIDCore().UnloadInputDevices();
+diff --git a/src/yuzu/main_window.h b/src/yuzu/main_window.h
+index 4da66ce..7bb69a9 100644
+--- a/src/yuzu/main_window.h
++++ b/src/yuzu/main_window.h
+@@ -97,6 +97,12 @@ namespace PlayTime {
+ class PlayTimeManager;
+ }
+ 
++#ifdef EGLANTINE_STEAM_REMOTE_PLAY
++namespace RemotePlayTogether {
++class Manager;
++}
++#endif
++
+ namespace FileSys {
+ class ContentProvider;
+ class ManualContentProvider;
+@@ -498,6 +504,10 @@ private:
+     std::unique_ptr<DiscordRPC::DiscordInterface> discord_rpc;
+     std::unique_ptr<PlayTime::PlayTimeManager> play_time_manager;
+     std::shared_ptr<InputCommon::InputSubsystem> input_subsystem;
++#ifdef EGLANTINE_STEAM_REMOTE_PLAY
++    // After input_subsystem, so it goes away first
++    std::unique_ptr<RemotePlayTogether::Manager> remote_play;
++#endif
+ 
+ #ifdef ENABLE_UPDATE_CHECKER
+     QFuture<std::optional<Common::Net::Release>> update_future;
+diff --git a/src/yuzu/steam_remote_play.cpp b/src/yuzu/steam_remote_play.cpp
+new file mode 100644
+index 0000000..fae6941
+--- /dev/null
++++ b/src/yuzu/steam_remote_play.cpp
+@@ -0,0 +1,980 @@
++// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++#include <algorithm>
++#include <array>
++#include <cctype>
++#include <charconv>
++#include <chrono>
++#include <cstdlib>
++#include <cstring>
++#include <filesystem>
++#include <fstream>
++#include <optional>
++#include <string>
++#include <string_view>
++#include <system_error>
++#include <unordered_map>
++#include <vector>
++
++#include <QAction>
++#include <QClipboard>
++#include <QGuiApplication>
++#include <QInputDialog>
++#include <QLabel>
++#include <QLineEdit>
++#include <QMenu>
++#include <QMessageBox>
++#include <QObject>
++#include <QStringList>
++#include <QTimer>
++
++#include <fmt/format.h>
++#include <steam/steam_api.h>
++
++#ifdef _WIN32
++#include <windows.h>
++#endif
++
++#include "common/common_types.h"
++#include "common/fs/fs_paths.h"
++#include "common/fs/fs_util.h"
++#include "common/fs/path_util.h"
++#include "common/logging.h"
++#include "common/param_package.h"
++#include "common/settings_input.h"
++#include "common/uuid.h"
++#include "hid_core/frontend/emulated_controller.h"
++#include "hid_core/hid_core.h"
++#include "hid_core/hid_types.h"
++#include "input_common/drivers/remote_play_keyboard.h"
++#include "input_common/main.h"
++#include "yuzu/steam_remote_play.h"
++
++namespace RemotePlayTogether {
++namespace {
++
++using Clock = std::chrono::steady_clock;
++
++constexpr int TickIntervalMs = 16;
++constexpr int TicksPerDeviceScan = 30;
++constexpr int GuestLinkTimeoutMs = 10000;
++// A virtual gamepad that was there this long before the first guest joined belongs to the host
++constexpr auto HostPadGracePeriod = std::chrono::seconds{5};
++// Player 1 is the host, guests get Player 2 to Player 8
++constexpr std::size_t HostPlayer = 0;
++constexpr std::size_t FirstGuestPlayer = 1;
++constexpr std::size_t LastGuestPlayer = 7;
++
++constexpr std::size_t NumButtons = Settings::NativeButton::NumButtons;
++constexpr std::size_t NumSticks = Settings::NativeAnalog::NumAnalogs;
++constexpr std::size_t NumMotions = Settings::NativeMotion::NumMotions;
++
++// STEAM_REMOTE_PLAY_APPID, used when nothing else picks an App ID
++constexpr u32 DefaultAppId{EGLANTINE_STEAM_APPID};
++
++// Where the App ID Eglantine asks Steam for comes from, strongest first
++enum class AppIdSource {
++    Environment, // Steam started Eglantine, or nx2_switches.txt sets SteamAppId
++    Chosen,      // Multiplayer > Change Steam App ID
++    AppIdFile,   // steam_appid.txt in the working directory, which the Steam API reads itself
++    Default,
++};
++
++bool steam_ready = false;
++std::string steam_error;
++AppIdSource app_id_source = AppIdSource::Default;
++// 0 when it couldn't be read
++u32 requested_app_id = 0;
++
++bool HasEnvironmentValue(const char* name) {
++    const char* value = std::getenv(name);
++    return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
++}
++
++void SetEnvironmentValue(const char* name, const char* value) {
++#ifdef _WIN32
++    // SDL and the Steam client read the process environment block, the CRT keeps its own copy
++    SetEnvironmentVariableA(name, value);
++    _putenv_s(name, value);
++#else
++    setenv(name, value, 1);
++#endif
++}
++
++// Reads an App ID number, optionally followed by whitespace and a label
++std::optional<u32> ParseAppId(std::string_view text) {
++    const auto is_space = [](char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; };
++    while (!text.empty() && is_space(text.front())) {
++        text.remove_prefix(1);
++    }
++    const char* const end = text.data() + text.size();
++    u32 app_id = 0;
++    const auto [rest, ec] = std::from_chars(text.data(), end, app_id);
++    if (ec != std::errc{} || app_id == 0 || (rest != end && !is_space(*rest))) {
++        return std::nullopt;
++    }
++    return app_id;
++}
++
++std::optional<u32> ReadAppIdFile(const std::filesystem::path& path) {
++    std::ifstream file{path};
++    std::string line;
++    if (!std::getline(file, line)) {
++        return std::nullopt;
++    }
++    // Notepad can start the file with a UTF-8 byte order mark
++    if (line.starts_with("\xEF\xBB\xBF")) {
++        line.erase(0, 3);
++    }
++    return ParseAppId(line);
++}
++
++// The App ID picked in the menu is kept next to the user's nx2_switches.txt
++std::filesystem::path ChosenAppIdPath() {
++#ifdef _WIN32
++    const auto config_dir = Common::FS::GetAppDataRoamingDirectory() / EDEN_DIR;
++#else
++    const auto config_dir = Common::FS::GetDataDirectory("XDG_CONFIG_HOME") / EDEN_DIR;
++#endif
++    return config_dir / "steam_remote_play_appid.txt";
++}
++
++bool SaveChosenAppId(u32 app_id) {
++    const auto path = ChosenAppIdPath();
++    std::error_code ec;
++    std::filesystem::create_directories(path.parent_path(), ec);
++    std::ofstream file{path, std::ios::trunc};
++    file << app_id << '\n';
++    file.close();
++    return !file.fail();
++}
++
++void RequestAppId(u32 app_id) {
++    const auto text = std::to_string(app_id);
++    SetEnvironmentValue("SteamAppId", text.c_str());
++    SetEnvironmentValue("SteamGameId", text.c_str());
++    requested_app_id = app_id;
++}
++
++// The App ID Eglantine runs as, or the one Steam refused. 0 when unknown.
++u32 CurrentAppId() {
++    return steam_ready ? SteamUtils()->GetAppID() : requested_app_id;
++}
++
++const char* AppIdSourceName() {
++    switch (app_id_source) {
++    case AppIdSource::Environment:
++        return "SteamAppId environment variable";
++    case AppIdSource::Chosen:
++        return "chosen in the Multiplayer menu";
++    case AppIdSource::AppIdFile:
++        return "steam_appid.txt";
++    case AppIdSource::Default:
++        return "build default";
++    }
++    return "";
++}
++
++// Steam gives every Remote Play guest controller to the game as one of these
++bool IsSteamVirtualGamepad(const Common::ParamPackage& device) {
++    if (device.Get("engine", "") != "sdl" || device.Has("guid2")) {
++        return false;
++    }
++    // SDL GUIDs hold the USB vendor in bytes 4-5, the product in 8-9 and the version in 12-13
++    const Common::UUID guid{device.Get("guid", "")};
++    const auto read_u16 = [&guid](std::size_t offset) {
++        return static_cast<u16>(guid.uuid[offset] | (guid.uuid[offset + 1] << 8));
++    };
++#ifdef __APPLE__
++    return read_u16(4) == 0x045E && read_u16(8) == 0x028E && read_u16(12) == 0;
++#else
++    return read_u16(4) == 0x28DE && read_u16(8) == 0x11FF;
++#endif
++}
++
++std::string DeviceKey(const Common::ParamPackage& device) {
++    return fmt::format("{}:{}", device.Get("guid", ""), device.Get("port", 0));
++}
++
++bool UsesDevice(const Core::HID::EmulatedController& controller,
++                const Common::ParamPackage& device) {
++    const auto mapped = controller.GetMappedDevices();
++    return std::any_of(mapped.begin(), mapped.end(), [&device](const Common::ParamPackage& used) {
++        return used.Get("engine", "") == device.Get("engine", "") &&
++               used.Get("guid", "") == device.Get("guid", "") &&
++               used.Get("port", 0) == device.Get("port", 0);
++    });
++}
++
++struct SavedPlayer {
++    std::array<Common::ParamPackage, NumButtons> buttons;
++    std::array<Common::ParamPackage, NumSticks> sticks;
++    std::array<Common::ParamPackage, NumMotions> motions;
++    Core::HID::NpadStyleIndex style{};
++    bool connected{};
++};
++
++SavedPlayer SavePlayer(const Core::HID::EmulatedController& controller) {
++    SavedPlayer saved;
++    for (std::size_t i = 0; i < NumButtons; ++i) {
++        saved.buttons[i] = controller.GetButtonParam(i);
++    }
++    for (std::size_t i = 0; i < NumSticks; ++i) {
++        saved.sticks[i] = controller.GetStickParam(i);
++    }
++    for (std::size_t i = 0; i < NumMotions; ++i) {
++        saved.motions[i] = controller.GetMotionParam(i);
++    }
++    saved.style = controller.GetNpadStyleIndex();
++    saved.connected = controller.IsConnected();
++    return saved;
++}
++
++void LoadPlayer(Core::HID::EmulatedController& controller, const SavedPlayer& saved) {
++    for (std::size_t i = 0; i < NumButtons; ++i) {
++        controller.SetButtonParam(i, saved.buttons[i]);
++    }
++    for (std::size_t i = 0; i < NumSticks; ++i) {
++        controller.SetStickParam(i, saved.sticks[i]);
++    }
++    for (std::size_t i = 0; i < NumMotions; ++i) {
++        controller.SetMotionParam(i, saved.motions[i]);
++    }
++    // Player 1 keeps its type, so it stays plugged in while it gets its own controller back
++    if (controller.GetNpadStyleIndex() != saved.style ||
++        controller.IsConnected() != saved.connected) {
++        controller.Disconnect();
++        controller.SetNpadStyleIndex(saved.style);
++        if (saved.connected) {
++            controller.Connect();
++        }
++    }
++    controller.SaveCurrentConfig();
++}
++
++// Maps every control to the device, like picking it in the controls dialog
++void MapDevice(Core::HID::EmulatedController& controller, const Common::ParamPackage& device,
++               InputCommon::InputSubsystem& input_subsystem) {
++    for (std::size_t i = 0; i < NumButtons; ++i) {
++        controller.SetButtonParam(i, {});
++    }
++    for (std::size_t i = 0; i < NumSticks; ++i) {
++        controller.SetStickParam(i, {});
++    }
++    for (std::size_t i = 0; i < NumMotions; ++i) {
++        controller.SetMotionParam(i, {});
++    }
++    for (const auto& [button, param] : input_subsystem.GetButtonMappingForDevice(device)) {
++        controller.SetButtonParam(static_cast<std::size_t>(button), param);
++    }
++    for (const auto& [stick, param] : input_subsystem.GetAnalogMappingForDevice(device)) {
++        controller.SetStickParam(static_cast<std::size_t>(stick), param);
++    }
++    for (const auto& [motion, param] : input_subsystem.GetMotionMappingForDevice(device)) {
++        controller.SetMotionParam(static_cast<std::size_t>(motion), param);
++    }
++}
++
++// Maps the device, then plugs the player in
++void BindDevice(Core::HID::EmulatedController& controller, const Common::ParamPackage& device,
++                InputCommon::InputSubsystem& input_subsystem) {
++    MapDevice(controller, device, input_subsystem);
++    controller.SetNpadStyleIndex(Core::HID::NpadStyleIndex::Fullkey);
++    controller.Connect();
++    if (!controller.IsConnected()) {
++        // The running game doesn't take Pro Controllers
++        controller.SetNpadStyleIndex(Core::HID::NpadStyleIndex::JoyconDual);
++        controller.Connect();
++    }
++    controller.SaveCurrentConfig();
++}
++
++QString RefusedMessage() {
++    return QObject::tr("Steam refused. It does this when the Steam overlay is turned off, or when "
++                       "the App ID Eglantine runs as (%1) isn't set up for Remote Play Together.")
++        .arg(SteamUtils()->GetAppID());
++}
++
++QString NoGuestLinkMessage() {
++    return QObject::tr("Steam didn't create a guest link. Steam can make one too: press Shift+Tab, "
++                       "open your friends list and click Invite Anyone to Play.");
++}
++
++// The host streaming to their own Steam Link or computer. Guests from an invite link have no Steam
++// account, so their session can have the host's Steam ID too.
++bool IsHostSession(RemotePlaySessionID_t session) {
++    auto* const remote_play = SteamRemotePlay();
++    if (remote_play->BSessionRemotePlayTogether(session) ||
++        remote_play->GetSessionGuestID(session) != 0) {
++        return false;
++    }
++    return remote_play->GetSessionSteamID(session) == SteamUser()->GetSteamID();
++}
++
++} // Anonymous namespace
++
++void Initialize() {
++    std::error_code ec;
++    if (HasEnvironmentValue("SteamAppId")) {
++        const std::string app_id = std::getenv("SteamAppId");
++        app_id_source = AppIdSource::Environment;
++        requested_app_id = ParseAppId(app_id).value_or(0);
++        if (!HasEnvironmentValue("SteamGameId")) {
++            SetEnvironmentValue("SteamGameId", app_id.c_str());
++        }
++    } else if (const auto chosen = ReadAppIdFile(ChosenAppIdPath())) {
++        app_id_source = AppIdSource::Chosen;
++        RequestAppId(*chosen);
++    } else if (std::filesystem::exists("steam_appid.txt", ec)) {
++        app_id_source = AppIdSource::AppIdFile;
++        requested_app_id = ReadAppIdFile("steam_appid.txt").value_or(0);
++    } else {
++        app_id_source = AppIdSource::Default;
++        RequestAppId(DefaultAppId);
++    }
++
++    SteamErrMsg error{};
++    if (SteamAPI_InitEx(&error) != k_ESteamAPIInitResult_OK) {
++        steam_error = error;
++        return;
++    }
++    if (SteamRemotePlay() == nullptr) {
++        steam_error = "the Steam client has no Remote Play interface";
++        SteamAPI_Shutdown();
++        return;
++    }
++    steam_ready = true;
++
++    // SDL ignores Steam's virtual gamepads unless this is set, which Steam only does for games it
++    // starts itself. Guest controllers only exist as virtual gamepads.
++    SetEnvironmentValue("SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD", "1");
++}
++
++void Shutdown() {
++    if (steam_ready) {
++        SteamAPI_Shutdown();
++        steam_ready = false;
++    }
++}
++
++struct Manager::Impl {
++    struct Guest {
++        RemotePlaySessionID_t session{};
++        std::size_t keyboard_slot{};
++        std::string name;
++    };
++
++    // A virtual gamepad given to a player, and the controls that player had before
++    struct AssignedPad {
++        std::string key;
++        Common::ParamPackage device;
++        std::size_t player{};
++        SavedPlayer previous;
++    };
++
++    Impl(QWidget* parent_, InputCommon::InputSubsystem& input_subsystem_,
++         Core::HID::HIDCore& hid_core_);
++    ~Impl();
++
++    void Tick();
++    void SyncSessions();
++    void AddGuest(RemotePlaySessionID_t session);
++    void RemoveGuest(RemotePlaySessionID_t session);
++    std::string GetGuestName(RemotePlaySessionID_t session, std::size_t slot) const;
++    void ReadGuestInput();
++    void UpdateGuestPads();
++    bool IsHostPad(const std::string& key) const;
++    bool IsAssigned(const std::string& key) const;
++    bool IsUsedByConnectedPlayer(const Common::ParamPackage& device) const;
++    void UpdateHostPad(const std::vector<Common::ParamPackage>& devices,
++                       const std::vector<Common::ParamPackage>& pads);
++    void AssignPad(const Common::ParamPackage& device, const std::string& key);
++    bool RestorePad(const AssignedPad& pad);
++    void UpdateStatus();
++    void ShowInviteOverlay();
++    void CreateGuestLink();
++    void ChooseAppId();
++
++    void OnSessionConnected(SteamRemotePlaySessionConnected_t* event);
++    void OnSessionDisconnected(SteamRemotePlaySessionDisconnected_t* event);
++    void OnGuestInvite(SteamRemotePlayTogetherGuestInvite_t* event);
++
++    QWidget* parent;
++    InputCommon::InputSubsystem& input_subsystem;
++    Core::HID::HIDCore& hid_core;
++    QObject context;
++    QTimer timer;
++    QLabel* status_label;
++    bool direct_input{};
++    bool link_requested{};
++    int ticks_until_scan{};
++
++    std::vector<Guest> guests;
++    std::optional<Clock::time_point> guests_since;
++    std::unordered_map<std::string, Clock::time_point> first_seen;
++    std::vector<AssignedPad> assigned_pads;
++    std::vector<std::string> refused_pads;
++    std::vector<std::string> reported_pads;
++
++    // These register with Steam when constructed, so they only exist while Steam is up
++    std::optional<CCallback<Impl, SteamRemotePlaySessionConnected_t>> connected_callback;
++    std::optional<CCallback<Impl, SteamRemotePlaySessionDisconnected_t>> disconnected_callback;
++    std::optional<CCallback<Impl, SteamRemotePlayTogetherGuestInvite_t>> invite_callback;
++};
++
++Manager::Impl::Impl(QWidget* parent_, InputCommon::InputSubsystem& input_subsystem_,
++                    Core::HID::HIDCore& hid_core_)
++    : parent{parent_}, input_subsystem{input_subsystem_}, hid_core{hid_core_},
++      status_label{new QLabel(parent_)} {
++    status_label->setContentsMargins(4, 0, 4, 0);
++    status_label->setVisible(steam_ready);
++
++    if (!steam_ready) {
++        LOG_WARNING(Frontend, "Steam Remote Play Together is unavailable with App ID {} ({}): {}",
++                    requested_app_id, AppIdSourceName(), steam_error);
++        return;
++    }
++    const u32 app_id = SteamUtils()->GetAppID();
++    LOG_INFO(Frontend, "Connected to Steam, running as App ID {} ({})", app_id, AppIdSourceName());
++    if (requested_app_id != 0 && app_id != requested_app_id) {
++        LOG_WARNING(Frontend, "Steam runs Eglantine as App ID {} instead of {}", app_id,
++                    requested_app_id);
++    }
++
++    // Keeps guest keyboards out of the host's keyboard and hotkeys
++    direct_input = SteamRemotePlay()->BEnableRemotePlayTogetherDirectInput();
++    if (!direct_input) {
++        LOG_WARNING(Frontend, "Steam merges guest keyboards with the local keyboard");
++    }
++
++    connected_callback.emplace(this, &Impl::OnSessionConnected);
++    disconnected_callback.emplace(this, &Impl::OnSessionDisconnected);
++    invite_callback.emplace(this, &Impl::OnGuestInvite);
++
++    QObject::connect(&timer, &QTimer::timeout, &context, [this] { Tick(); });
++    timer.start(TickIntervalMs);
++    UpdateStatus();
++}
++
++Manager::Impl::~Impl() {
++    timer.stop();
++    if (direct_input) {
++        SteamRemotePlay()->DisableRemotePlayTogetherDirectInput();
++    }
++}
++
++void Manager::Impl::Tick() {
++    SteamAPI_RunCallbacks();
++    ReadGuestInput();
++    if (--ticks_until_scan <= 0) {
++        ticks_until_scan = TicksPerDeviceScan;
++        SyncSessions();
++        UpdateGuestPads();
++    }
++}
++
++// Callbacks can be missed, so the session list from Steam is the reference
++void Manager::Impl::SyncSessions() {
++    auto* const remote_play = SteamRemotePlay();
++    std::vector<RemotePlaySessionID_t> sessions;
++    const uint32 count = remote_play->GetSessionCount();
++    for (uint32 i = 0; i < count; ++i) {
++        const RemotePlaySessionID_t session = remote_play->GetSessionID(static_cast<int>(i));
++        if (session != 0) {
++            sessions.push_back(session);
++        }
++    }
++
++    std::vector<RemotePlaySessionID_t> gone;
++    for (const auto& guest : guests) {
++        if (std::find(sessions.begin(), sessions.end(), guest.session) == sessions.end()) {
++            gone.push_back(guest.session);
++        }
++    }
++    for (const auto session : gone) {
++        RemoveGuest(session);
++    }
++    for (const auto session : sessions) {
++        AddGuest(session);
++    }
++}
++
++void Manager::Impl::AddGuest(RemotePlaySessionID_t session) {
++    const auto known = std::any_of(guests.begin(), guests.end(), [session](const Guest& guest) {
++        return guest.session == session;
++    });
++    if (session == 0 || known) {
++        return;
++    }
++
++    if (IsHostSession(session)) {
++        return;
++    }
++
++    auto* const remote_play = SteamRemotePlay();
++    std::size_t slot = 0;
++    while (slot < InputCommon::RemotePlayKeyboard::MaxGuests &&
++           std::any_of(
++               guests.begin(), guests.end(),
++               [slot](const Guest& guest) { return guest.keyboard_slot == slot; })) {
++        ++slot;
++    }
++    if (slot == InputCommon::RemotePlayKeyboard::MaxGuests) {
++        LOG_WARNING(Frontend, "Remote Play Together: too many guests, ignoring session {}",
++                    session);
++        return;
++    }
++
++    Guest guest{session, slot, GetGuestName(session, slot)};
++    if (auto* const keyboard = input_subsystem.GetRemotePlayKeyboard()) {
++        keyboard->ConnectGuest(slot, guest.name);
++    }
++    if (direct_input) {
++        // Guest mice aren't used, so don't draw their cursors
++        remote_play->SetMouseVisibility(session, false);
++    }
++    if (guests.empty()) {
++        guests_since = Clock::now();
++    }
++    LOG_INFO(Frontend, "Remote Play Together: {} joined", guest.name);
++    guests.push_back(std::move(guest));
++    UpdateStatus();
++}
++
++void Manager::Impl::RemoveGuest(RemotePlaySessionID_t session) {
++    const auto it = std::find_if(guests.begin(), guests.end(), [session](const Guest& guest) {
++        return guest.session == session;
++    });
++    if (it == guests.end()) {
++        return;
++    }
++    if (auto* const keyboard = input_subsystem.GetRemotePlayKeyboard()) {
++        keyboard->DisconnectGuest(it->keyboard_slot);
++    }
++    LOG_INFO(Frontend, "Remote Play Together: {} left", it->name);
++    guests.erase(it);
++    if (guests.empty()) {
++        guests_since.reset();
++    }
++    UpdateStatus();
++}
++
++std::string Manager::Impl::GetGuestName(RemotePlaySessionID_t session, std::size_t slot) const {
++    auto* const remote_play = SteamRemotePlay();
++    const CSteamID steam_id = remote_play->GetSessionSteamID(session);
++    // Guests from an invite link have no Steam account, use their device name
++    if (steam_id.BIndividualAccount() && steam_id != SteamUser()->GetSteamID()) {
++        const char* const name = SteamFriends()->GetFriendPersonaName(steam_id);
++        if (name != nullptr && name[0] != '\0' && std::strcmp(name, "[unknown]") != 0) {
++            return name;
++        }
++    }
++    const char* const device = remote_play->GetSessionClientName(session);
++    if (device != nullptr && device[0] != '\0') {
++        return device;
++    }
++    return fmt::format("Guest {}", slot + 1);
++}
++
++void Manager::Impl::ReadGuestInput() {
++    if (!direct_input) {
++        return;
++    }
++    auto* const keyboard = input_subsystem.GetRemotePlayKeyboard();
++    auto* const remote_play = SteamRemotePlay();
++    std::array<RemotePlayInput_t, 32> events{};
++    uint32 count = 0;
++    do {
++        count = remote_play->GetInput(events.data(), static_cast<uint32>(events.size()));
++        for (uint32 i = 0; i < count; ++i) {
++            const RemotePlayInput_t& event = events[i];
++            // Guest mice aren't mapped to anything
++            if (event.m_eType != k_ERemotePlayInputKeyDown &&
++                event.m_eType != k_ERemotePlayInputKeyUp) {
++                continue;
++            }
++            const auto guest =
++                std::find_if(guests.begin(), guests.end(), [&event](const Guest& entry) {
++                    return entry.session == event.m_unSessionID;
++                });
++            if (guest == guests.end() || keyboard == nullptr) {
++                continue;
++            }
++            keyboard->SetKey(guest->keyboard_slot, event.data.m_Key.m_eScancode,
++                             event.m_eType == k_ERemotePlayInputKeyDown);
++        }
++    } while (count == events.size());
++}
++
++void Manager::Impl::UpdateGuestPads() {
++    const auto now = Clock::now();
++    const auto devices = input_subsystem.GetInputDevices();
++    std::vector<Common::ParamPackage> pads;
++    for (const auto& device : devices) {
++        if (IsSteamVirtualGamepad(device)) {
++            pads.push_back(device);
++        }
++    }
++    const auto is_present = [&pads](const std::string& key) {
++        return std::any_of(pads.begin(), pads.end(), [&key](const Common::ParamPackage& pad) {
++            return DeviceKey(pad) == key;
++        });
++    };
++
++    // A virtual gamepad that went away means its guest left or Steam let go of the host's
++    // controller, so the player gets its controls back
++    const auto restored = std::erase_if(assigned_pads, [&](const AssignedPad& pad) {
++        return !is_present(pad.key) && RestorePad(pad);
++    });
++    std::erase_if(first_seen, [&](const auto& entry) {
++        if (is_present(entry.first)) {
++            return false;
++        }
++        LOG_INFO(Frontend, "Remote Play Together: Steam virtual gamepad {} went away", entry.first);
++        return true;
++    });
++    std::erase_if(refused_pads, [&](const std::string& key) { return !is_present(key); });
++    std::erase_if(reported_pads, [&](const std::string& key) { return !is_present(key); });
++    for (const auto& pad : pads) {
++        if (first_seen.try_emplace(DeviceKey(pad), now).second) {
++            LOG_INFO(Frontend,
++                     "Remote Play Together: Steam virtual gamepad {} ({}) appeared, {} guest(s)",
++                     pad.Get("display", ""), DeviceKey(pad), guests.size());
++        }
++    }
++    if (restored != 0) {
++        UpdateStatus();
++    }
++
++    UpdateHostPad(devices, pads);
++
++    if (!guests_since) {
++        return;
++    }
++    for (const auto& pad : pads) {
++        const auto key = DeviceKey(pad);
++        const auto refused =
++            std::find(refused_pads.begin(), refused_pads.end(), key) != refused_pads.end();
++        if (IsHostPad(key) || IsAssigned(key) || refused || IsUsedByConnectedPlayer(pad)) {
++            continue;
++        }
++        AssignPad(pad, key);
++    }
++}
++
++// A virtual gamepad that was there before the first guest joined is the host's own controller
++bool Manager::Impl::IsHostPad(const std::string& key) const {
++    return !guests_since || first_seen.at(key) + HostPadGracePeriod < *guests_since;
++}
++
++bool Manager::Impl::IsAssigned(const std::string& key) const {
++    return std::any_of(assigned_pads.begin(), assigned_pads.end(),
++                       [&key](const AssignedPad& pad) { return pad.key == key; });
++}
++
++bool Manager::Impl::IsUsedByConnectedPlayer(const Common::ParamPackage& device) const {
++    for (std::size_t index = 0; index < Core::HID::HIDCore::available_controllers; ++index) {
++        const auto* const controller = hid_core.GetEmulatedControllerByIndex(index);
++        if (controller != nullptr && controller->IsConnected() && UsesDevice(*controller, device)) {
++            return true;
++        }
++    }
++    return false;
++}
++
++// Steam Input can take over the host's own controller: the real one disappears and a virtual
++// gamepad shows up instead. Player 1 then uses the virtual gamepad until Steam lets go.
++void Manager::Impl::UpdateHostPad(const std::vector<Common::ParamPackage>& devices,
++                                  const std::vector<Common::ParamPackage>& pads) {
++    auto* const controller = hid_core.GetEmulatedControllerByIndex(HostPlayer);
++    if (controller == nullptr || !controller->IsConnected() || controller->IsConfiguring()) {
++        return;
++    }
++    const auto has_pad =
++        std::any_of(assigned_pads.begin(), assigned_pads.end(),
++                    [](const AssignedPad& pad) { return pad.player == HostPlayer; });
++    if (has_pad) {
++        return;
++    }
++
++    // Only when every device Player 1 is mapped to is a controller that went away
++    const auto is_gone = [&devices](const Common::ParamPackage& used) {
++        return used.Get("engine", "") == "sdl" &&
++               std::none_of(devices.begin(), devices.end(),
++                            [&used](const Common::ParamPackage& device) {
++                                return device.Get("engine", "") == "sdl" &&
++                                       device.Get("guid", "") == used.Get("guid", "") &&
++                                       device.Get("port", 0) == used.Get("port", 0);
++                            });
++    };
++    const auto mapped = controller->GetMappedDevices();
++    if (mapped.empty() || !std::all_of(mapped.begin(), mapped.end(), is_gone)) {
++        return;
++    }
++
++    for (const auto& pad : pads) {
++        const auto key = DeviceKey(pad);
++        if (!IsHostPad(key) || IsAssigned(key) || IsUsedByConnectedPlayer(pad)) {
++            continue;
++        }
++        AssignedPad entry{key, pad, HostPlayer, SavePlayer(*controller)};
++        MapDevice(*controller, pad, input_subsystem);
++        controller->SaveCurrentConfig();
++        LOG_INFO(
++            Frontend,
++            "Remote Play Together: Steam took over Player 1's controller, Player 1 now uses {}",
++            pad.Get("display", ""));
++        assigned_pads.push_back(std::move(entry));
++        UpdateStatus();
++        return;
++    }
++}
++
++void Manager::Impl::AssignPad(const Common::ParamPackage& device, const std::string& key) {
++    bool waiting = false;
++    for (std::size_t index = FirstGuestPlayer; index <= LastGuestPlayer; ++index) {
++        auto* const controller = hid_core.GetEmulatedControllerByIndex(index);
++        if (controller == nullptr || controller->IsConnected()) {
++            continue;
++        }
++        if (controller->IsConfiguring()) {
++            // The controls dialog is open, try again once it closes
++            waiting = true;
++            continue;
++        }
++
++        AssignedPad pad{key, device, index, SavePlayer(*controller)};
++        BindDevice(*controller, device, input_subsystem);
++        if (!controller->IsConnected()) {
++            LoadPlayer(*controller, pad.previous);
++            refused_pads.push_back(key);
++            LOG_WARNING(Frontend,
++                        "Remote Play Together: the game refused a controller as Player {}",
++                        index + 1);
++            return;
++        }
++        LOG_INFO(Frontend, "Remote Play Together: {} is now Player {}", device.Get("display", ""),
++                 index + 1);
++        assigned_pads.push_back(std::move(pad));
++        UpdateStatus();
++        return;
++    }
++
++    if (!waiting &&
++        std::find(reported_pads.begin(), reported_pads.end(), key) == reported_pads.end()) {
++        reported_pads.push_back(key);
++        LOG_WARNING(Frontend, "Remote Play Together: no free player for {}",
++                    device.Get("display", ""));
++    }
++}
++
++bool Manager::Impl::RestorePad(const AssignedPad& pad) {
++    auto* const controller = hid_core.GetEmulatedControllerByIndex(pad.player);
++    if (controller == nullptr) {
++        return true;
++    }
++    if (controller->IsConfiguring()) {
++        return false;
++    }
++    // Leave the player alone if it was remapped since
++    if (UsesDevice(*controller, pad.device)) {
++        LoadPlayer(*controller, pad.previous);
++        LOG_INFO(Frontend, "Remote Play Together: Player {} has its own controls back",
++                 pad.player + 1);
++    }
++    return true;
++}
++
++void Manager::Impl::UpdateStatus() {
++    if (guests.empty()) {
++        status_label->setText(QObject::tr("Remote Play: no guests"));
++    } else {
++        status_label->setText(
++            QObject::tr("Remote Play: %n guest(s)", nullptr, static_cast<int>(guests.size())));
++    }
++
++    QStringList lines;
++    for (const auto& guest : guests) {
++        lines << QString::fromStdString(guest.name);
++    }
++    for (const auto& pad : assigned_pads) {
++        lines << QObject::tr("Player %1: %2")
++                     .arg(static_cast<int>(pad.player + 1))
++                     .arg(QString::fromStdString(pad.device.Get("display", "")));
++    }
++    status_label->setToolTip(lines.isEmpty()
++                                 ? QObject::tr("Invite friends from the Multiplayer menu")
++                                 : lines.join(QLatin1Char('\n')));
++}
++
++void Manager::Impl::ShowInviteOverlay() {
++    if (!SteamRemotePlay()->ShowRemotePlayTogetherUI()) {
++        QMessageBox::warning(parent, QObject::tr("Remote Play Together"), RefusedMessage());
++    }
++}
++
++void Manager::Impl::CreateGuestLink() {
++    // An empty Steam ID asks for a link instead of an invite, OnGuestInvite receives it
++    if (!SteamRemotePlay()->BSendRemotePlayTogetherInvite(CSteamID())) {
++        LOG_WARNING(Frontend, "Remote Play Together: Steam refused to create a guest link");
++        QMessageBox::warning(parent, QObject::tr("Remote Play Together"), NoGuestLinkMessage());
++        return;
++    }
++    LOG_INFO(Frontend, "Remote Play Together: asked Steam for a guest link");
++    link_requested = true;
++    QTimer::singleShot(GuestLinkTimeoutMs, &context, [this] {
++        if (!link_requested) {
++            return;
++        }
++        link_requested = false;
++        LOG_WARNING(Frontend, "Remote Play Together: Steam sent no guest link");
++        QMessageBox::warning(parent, QObject::tr("Remote Play Together"), NoGuestLinkMessage());
++    });
++}
++
++void Manager::Impl::ChooseAppId() {
++    const u32 current = CurrentAppId();
++    const auto chosen = ReadAppIdFile(ChosenAppIdPath());
++    const u32 next = chosen.value_or(current != 0 ? current : DefaultAppId);
++
++    QString label = QObject::tr("Enter a Steam App ID that you own or that its owner has "
++                                "explicitly authorized you to use. It must be configured for "
++                                "Remote Play Together. This feature does not grant permission "
++                                "to use another game's App ID.");
++    if (current != 0) {
++        label +=
++            QStringLiteral("\n\n") + QObject::tr("Eglantine runs as App ID %1 now.").arg(current);
++    }
++    if (!steam_ready) {
++        label += QStringLiteral("\n\n") +
++                 QObject::tr("Steam didn't connect: %1").arg(QString::fromStdString(steam_error));
++    }
++
++    const QString title = QObject::tr("Steam App ID");
++    bool ok = false;
++    const QString text =
++        QInputDialog::getText(parent, title, label, QLineEdit::Normal, QString::number(next), &ok);
++    if (!ok) {
++        return;
++    }
++    const auto app_id = ParseAppId(text.toStdString());
++    if (!app_id) {
++        QMessageBox::warning(parent, title,
++                             QObject::tr("\"%1\" isn't a Steam App ID. App IDs are positive "
++                                         "whole numbers.")
++                                 .arg(text.trimmed()));
++        return;
++    }
++    if (!SaveChosenAppId(*app_id)) {
++        QMessageBox::warning(
++            parent, title,
++            QObject::tr("Eglantine couldn't save the App ID in %1.")
++                .arg(QString::fromStdString(Common::FS::PathToUTF8String(ChosenAppIdPath()))));
++        return;
++    }
++    LOG_INFO(Frontend, "Remote Play Together: App ID {} chosen", *app_id);
++
++    QString message =
++        *app_id == current
++            ? QObject::tr("Eglantine runs as App ID %1.").arg(*app_id)
++            : QObject::tr("Eglantine runs as App ID %1 from the next start. Close Eglantine and "
++                          "start it again.")
++                  .arg(*app_id);
++    if (app_id_source == AppIdSource::Environment) {
++        message += QStringLiteral("\n\n") +
++                   QObject::tr("For now the SteamAppId environment variable decides, because "
++                               "Steam started Eglantine or nx2_switches.txt sets it. Your choice "
++                               "applies once it's gone.");
++    }
++    QMessageBox::information(parent, title, message);
++}
++
++void Manager::Impl::OnSessionConnected(SteamRemotePlaySessionConnected_t* event) {
++    const auto session = event->m_unSessionID;
++    auto* const remote_play = SteamRemotePlay();
++    LOG_INFO(Frontend,
++             "Remote Play Together: session {} connected, invited: {}, guest ID: {}, host's "
++             "account: {}",
++             session, remote_play->BSessionRemotePlayTogether(session),
++             remote_play->GetSessionGuestID(session),
++             remote_play->GetSessionSteamID(session) == SteamUser()->GetSteamID());
++    AddGuest(session);
++}
++
++void Manager::Impl::OnSessionDisconnected(SteamRemotePlaySessionDisconnected_t* event) {
++    RemoveGuest(event->m_unSessionID);
++}
++
++void Manager::Impl::OnGuestInvite(SteamRemotePlayTogetherGuestInvite_t* event) {
++    link_requested = false;
++    const QString url = QString::fromUtf8(
++        event->m_szConnectURL,
++        static_cast<qsizetype>(strnlen(event->m_szConnectURL, sizeof(event->m_szConnectURL))));
++    if (url.isEmpty()) {
++        LOG_WARNING(Frontend, "Remote Play Together: Steam sent an empty guest link");
++        QTimer::singleShot(0, &context, [this] {
++            QMessageBox::warning(parent, QObject::tr("Remote Play Together"), NoGuestLinkMessage());
++        });
++        return;
++    }
++    LOG_INFO(Frontend, "Remote Play Together: got a guest link from Steam");
++    QGuiApplication::clipboard()->setText(url);
++    // Not from inside the Steam callback, the dialog runs its own event loop
++    QTimer::singleShot(0, &context, [this, url] {
++        QMessageBox::information(
++            parent, QObject::tr("Remote Play Together"),
++            QObject::tr("The guest link is on your clipboard. One link lets one person join, from "
++                        "Steam or the Steam Link app:\n\n%1")
++                .arg(url));
++    });
++}
++
++Manager::Manager(QWidget* parent, InputCommon::InputSubsystem& input_subsystem,
++                 Core::HID::HIDCore& hid_core)
++    : impl{std::make_unique<Impl>(parent, input_subsystem, hid_core)} {}
++
++Manager::~Manager() = default;
++
++void Manager::AddMenuActions(QMenu* menu) {
++    menu->addSeparator();
++    if (steam_ready) {
++        auto* const invite =
++            menu->addAction(QObject::tr("Invite Friends to Remote Play Together..."));
++        QObject::connect(invite, &QAction::triggered, &impl->context,
++                         [this] { impl->ShowInviteOverlay(); });
++        auto* const link = menu->addAction(QObject::tr("Copy Remote Play Guest Link"));
++        QObject::connect(link, &QAction::triggered, &impl->context,
++                         [this] { impl->CreateGuestLink(); });
++    } else {
++        menu->addAction(QObject::tr("Remote Play Together (Steam not connected)"))
++            ->setEnabled(false);
++    }
++
++    // Also there without Steam, which refuses App IDs that aren't in the Steam library
++    const u32 app_id = CurrentAppId();
++    auto* const choose =
++        menu->addAction(app_id == 0 ? QObject::tr("Change Steam App ID...")
++                                    : QObject::tr("Change Steam App ID (now %1)...").arg(app_id));
++    QObject::connect(choose, &QAction::triggered, &impl->context, [this] { impl->ChooseAppId(); });
++}
++
++QLabel* Manager::GetStatusLabel() const {
++    return impl->status_label;
++}
++
++bool Manager::Close() {
++    impl->timer.stop();
++    bool changed = false;
++    for (const auto& pad : impl->assigned_pads) {
++        auto* const controller = impl->hid_core.GetEmulatedControllerByIndex(pad.player);
++        if (controller != nullptr && UsesDevice(*controller, pad.device)) {
++            LoadPlayer(*controller, pad.previous);
++            changed = true;
++        }
++    }
++    impl->assigned_pads.clear();
++    return changed;
++}
++
++} // namespace RemotePlayTogether
+diff --git a/src/yuzu/steam_remote_play.h b/src/yuzu/steam_remote_play.h
+new file mode 100644
+index 0000000..45d9e19
+--- /dev/null
++++ b/src/yuzu/steam_remote_play.h
+@@ -0,0 +1,63 @@
++// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++#pragma once
++
++#include <memory>
++
++class QLabel;
++class QMenu;
++class QWidget;
++
++namespace Core::HID {
++class HIDCore;
++}
++
++namespace InputCommon {
++class InputSubsystem;
++}
++
++// Steam Remote Play Together. Not named SteamRemotePlay, which is the Steamworks accessor.
++namespace RemotePlayTogether {
++
++/**
++ * Connects to the running Steam client. Call it before any graphics device exists, so the Steam
++ * overlay can hook it, and before input starts, so SDL accepts the virtual gamepads Steam creates
++ * for Remote Play Together guests.
++ */
++void Initialize();
++
++/// Disconnects from Steam. Call it once the main window is gone.
++void Shutdown();
++
++/**
++ * Remote Play Together for the main window: invites, the guest count in the status bar, guest
++ * keyboards, and a free player for every guest gamepad.
++ */
++class Manager {
++public:
++    explicit Manager(QWidget* parent, InputCommon::InputSubsystem& input_subsystem,
++                     Core::HID::HIDCore& hid_core);
++    ~Manager();
++
++    Manager(const Manager&) = delete;
++    Manager& operator=(const Manager&) = delete;
++
++    /// Adds the invite actions to the end of a menu
++    void AddMenuActions(QMenu* menu);
++
++    /// Status bar label with the guest count, hidden when Steam isn't available
++    [[nodiscard]] QLabel* GetStatusLabel() const;
++
++    /**
++     * Stops handling guests and gives every player handed to a guest its previous configuration
++     * back. Returns true if a player changed, so the configuration needs saving.
++     */
++    bool Close();
++
++private:
++    struct Impl;
++    std::unique_ptr<Impl> impl;
++};
++
++} // namespace RemotePlayTogether

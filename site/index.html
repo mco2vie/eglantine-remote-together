@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A private, source-based builder for authorized Steamworks developers adding Steam Remote Play Together to compatible Eglantine builds and forks.">
+  <meta name="theme-color" content="#0a101c">
+  <title>Eglantine Remote Together</title>
+  <link rel="stylesheet" href="assets/site.css">
+  <script defer src="assets/site.js"></script>
+</head>
+<body class="language-en">
+  <a class="skip-link" href="#content">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#top" aria-label="Eglantine Remote Together home">
+        <span class="brand-mark" aria-hidden="true">ER</span>
+        <span>Eglantine Remote Together</span>
+      </a>
+      <nav aria-label="Language">
+        <button class="language-button" type="button" data-language="en" aria-pressed="true">English</button>
+        <button class="language-button" type="button" data-language="fr" aria-pressed="false">Français</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="content">
+    <section id="top" class="hero">
+      <div class="wrap language language-en">
+        <p class="eyebrow">Unofficial private build helper</p>
+        <h1>Play local Eglantine games with friends through Steam Remote Play Together.</h1>
+        <p class="lede">For developers who have authorized Steamworks access: build a compatible Eglantine version or GitHub fork on your own Windows PC. The feature is built into Eglantine, so you use its Multiplayer menu instead of RemotePlayForever.</p>
+        <div class="actions">
+          <a class="button primary" href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">Download the builder</a>
+          <a class="button secondary" href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">Review the builder source</a>
+          <a class="button secondary" href="downloads/steam-remote-play-together.patch">Download the source patch</a>
+        </div>
+        <p class="small">The builder zip contains no Steamworks SDK files, Valve DLLs, or Steam App IDs. Review its <a href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">auditable source and release recipe</a> before running it.</p>
+      </div>
+
+      <div class="wrap language language-fr">
+        <p class="eyebrow">Outil non officiel pour compilation privée</p>
+        <h1>Jouez à des jeux locaux Eglantine avec vos amis grâce à Steam Remote Play Together.</h1>
+        <p class="lede">Pour les développeurs qui disposent d'un accès Steamworks autorisé : compilez une version compatible d'Eglantine ou un fork GitHub sur votre propre PC Windows. La fonction est intégrée dans Eglantine, vous utilisez donc son menu Multijoueur au lieu de RemotePlayForever.</p>
+        <div class="actions">
+          <a class="button primary" href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">Télécharger l'outil</a>
+          <a class="button secondary" href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">Vérifier le code source de l'outil</a>
+          <a class="button secondary" href="downloads/steam-remote-play-together.patch">Télécharger le patch source</a>
+        </div>
+        <p class="small">Le zip de l'outil ne contient aucun fichier du SDK Steamworks, DLL Valve ni App ID Steam. Vérifiez son <a href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">code source vérifiable et sa recette de publication</a> avant de le lancer.</p>
+      </div>
+    </section>
+
+    <section class="notice-section">
+      <div class="wrap language language-en">
+        <div class="notice warning">
+          <strong>Important:</strong> the builder can be shared. The build it creates contains <code>steam_api64.dll</code> from your own Steamworks SDK. Keep that generated build private. Do not upload or share it.
+        </div>
+        <div class="notice warning">
+          <strong>Authorization required:</strong> use only a Steam App ID you own or whose owner explicitly authorized you to use. It must be configured for Remote Play Together. This project does not grant permission to use another game's App ID.
+        </div>
+      </div>
+      <div class="wrap language language-fr">
+        <div class="notice warning">
+          <strong>Important :</strong> l'outil peut être partagé. La compilation qu'il crée contient <code>steam_api64.dll</code> provenant de votre propre SDK Steamworks. Gardez cette compilation privée. Ne l'envoyez pas et ne la publiez pas.
+        </div>
+        <div class="notice warning">
+          <strong>Autorisation obligatoire :</strong> utilisez seulement un App ID Steam que vous possédez ou que son propriétaire vous a explicitement autorisé à utiliser. Il doit être configuré pour Remote Play Together. Ce projet ne donne pas le droit d'utiliser l'App ID d'un autre jeu.
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap language language-en">
+        <div class="section-heading">
+          <p class="eyebrow">What it adds</p>
+          <h2>Steam features inside Eglantine</h2>
+        </div>
+        <div class="card-grid three">
+          <article class="card"><h3>Invite friends</h3><p>Invite Steam friends from Eglantine's <strong>Multiplayer</strong> menu.</p></article>
+          <article class="card"><h3>Guest links</h3><p>Copy a Steam Remote Play guest link for someone who is not on your friends list.</p></article>
+          <article class="card"><h3>Controller handling</h3><p>Guest controllers become Player 2 and up. The build also recovers Player 1 when Steam hides the original controller.</p></article>
+          <article class="card"><h3>Authorized App ID</h3><p>Use <strong>Multiplayer → Change Steam App ID…</strong> only for an App ID you own or are expressly authorized to use.</p></article>
+          <article class="card"><h3>Steam configuration</h3><p>The chosen App ID must be configured for Remote Play Together by its authorized owner.</p></article>
+          <article class="card"><h3>No RemotePlayForever</h3><p>The output uses Steam directly. You do not need RemotePlayForever to host a session.</p></article>
+        </div>
+      </div>
+
+      <div class="wrap language language-fr">
+        <div class="section-heading">
+          <p class="eyebrow">Fonctions ajoutées</p>
+          <h2>Fonctions Steam directement dans Eglantine</h2>
+        </div>
+        <div class="card-grid three">
+          <article class="card"><h3>Inviter des amis</h3><p>Invitez vos amis Steam depuis le menu <strong>Multiplayer</strong> d'Eglantine.</p></article>
+          <article class="card"><h3>Liens invités</h3><p>Copiez un lien invité Steam Remote Play pour quelqu'un qui n'est pas dans votre liste d'amis.</p></article>
+          <article class="card"><h3>Gestion des manettes</h3><p>Les manettes invitées deviennent le joueur 2 et suivants. La compilation récupère aussi le joueur 1 si Steam masque sa manette d'origine.</p></article>
+          <article class="card"><h3>App ID autorisé</h3><p>Utilisez <strong>Multiplayer → Change Steam App ID…</strong> seulement avec un App ID que vous possédez ou que vous êtes expressément autorisé à utiliser.</p></article>
+          <article class="card"><h3>Configuration Steam</h3><p>L'App ID choisi doit être configuré pour Remote Play Together par son propriétaire autorisé.</p></article>
+          <article class="card"><h3>Sans RemotePlayForever</h3><p>Le résultat utilise Steam directement. Vous n'avez pas besoin de RemotePlayForever pour héberger une session.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section muted">
+      <div class="wrap language language-en">
+        <div class="section-heading">
+          <p class="eyebrow">Before the first build</p>
+          <h2>Install these once</h2>
+          <p>The wizard checks the folders you select. It does not install software without your approval.</p>
+        </div>
+        <ol class="steps requirements">
+          <li><strong>Windows 10 or Windows 11, 64-bit.</strong></li>
+          <li><a href="https://visualstudio.microsoft.com/vs/community/" rel="noopener noreferrer">Visual Studio Community</a> with <strong>Desktop development with C++</strong>.</li>
+          <li><a href="https://www.qt.io/download-qt-installer-oss" rel="noopener noreferrer">Qt for MSVC 2022 64-bit</a>, including the <strong>Qt Charts</strong> module. Qt 6.8.3 is the version tested with this patch.</li>
+          <li><a href="https://vulkan.lunarg.com/sdk/home#windows" rel="noopener noreferrer">Vulkan SDK</a>, including <code>glslangValidator.exe</code>.</li>
+          <li>Steamworks SDK 1.62 or newer, obtained through <a href="https://partner.steamgames.com/downloads/list" rel="noopener noreferrer">access authorized by Valve</a>. You also need an App ID you own or are expressly authorized to use, configured for Remote Play Together. Select the SDK folder named <code>sdk</code>.</li>
+          <li>At least <strong>15 GB free space</strong> in the build workspace.</li>
+        </ol>
+      </div>
+
+      <div class="wrap language language-fr">
+        <div class="section-heading">
+          <p class="eyebrow">Avant la première compilation</p>
+          <h2>Installez ces éléments une fois</h2>
+          <p>L'assistant vérifie les dossiers choisis. Il n'installe aucun logiciel sans votre accord.</p>
+        </div>
+        <ol class="steps requirements">
+          <li><strong>Windows 10 ou Windows 11, 64-bit.</strong></li>
+          <li><a href="https://visualstudio.microsoft.com/vs/community/" rel="noopener noreferrer">Visual Studio Community</a> avec <strong>Développement Desktop en C++</strong>.</li>
+          <li><a href="https://www.qt.io/download-qt-installer-oss" rel="noopener noreferrer">Qt pour MSVC 2022 64-bit</a>, avec le module <strong>Qt Charts</strong>. Qt 6.8.3 est la version testée avec ce patch.</li>
+          <li><a href="https://vulkan.lunarg.com/sdk/home#windows" rel="noopener noreferrer">SDK Vulkan</a>, avec <code>glslangValidator.exe</code>.</li>
+          <li>SDK Steamworks 1.62 ou plus récent, obtenu avec un <a href="https://partner.steamgames.com/downloads/list" rel="noopener noreferrer">accès autorisé par Valve</a>. Vous avez aussi besoin d'un App ID que vous possédez ou que vous êtes expressément autorisé à utiliser, configuré pour Remote Play Together. Sélectionnez le dossier SDK nommé <code>sdk</code>.</li>
+          <li>Au moins <strong>15 Go d'espace libre</strong> dans l'espace de compilation.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap language language-en">
+        <div class="section-heading"><p class="eyebrow">Build a version or fork</p><h2>Four steps</h2></div>
+        <ol class="steps numbered">
+          <li><span class="step-number">1</span><div><h3>Download and extract</h3><p>Download <a href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">the builder zip</a>, extract it, then double-click <code>Eglantine-Steam-Remote-Play-Builder.exe</code>.</p></div></li>
+          <li><span class="step-number">2</span><div><h3>Choose the source</h3><p>For official Eglantine, keep <code>https://github.com/Eglantine-Community/Eglantine.git</code>. Enter <code>nx2</code> for the development branch, or a release tag such as <code>v0.1.0-rc3</code>.</p></div></li>
+          <li><span class="step-number">3</span><div><h3>Choose your folders and App ID</h3><p>Select your own Steamworks <code>sdk</code> folder, Qt folder, Vulkan SDK folder, and an empty or dedicated build workspace. Enter only an App ID you own or are expressly authorized to use, configured for Remote Play Together. The builder never changes your existing Eglantine installation.</p></div></li>
+          <li><span class="step-number">4</span><div><h3>Finish and wait</h3><p>After you click Finish, a PowerShell window builds a new private package. It prints the output folder, zip path, build log, and a failure report if something needs fixing.</p></div></li>
+        </ol>
+        <div class="notice tip"><strong>For a fork:</strong> paste its public GitHub HTTPS URL and the exact branch or tag. Only build a fork you trust: its CMake build can run repository-controlled commands on your PC. The builder stops without changing your normal Eglantine install when the patch does not fit.</div>
+      </div>
+
+      <div class="wrap language language-fr">
+        <div class="section-heading"><p class="eyebrow">Compiler une version ou un fork</p><h2>Quatre étapes</h2></div>
+        <ol class="steps numbered">
+          <li><span class="step-number">1</span><div><h3>Téléchargez et extrayez</h3><p>Téléchargez <a href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">le zip de l'outil</a>, extrayez-le, puis double-cliquez sur <code>Eglantine-Steam-Remote-Play-Builder.exe</code>.</p></div></li>
+          <li><span class="step-number">2</span><div><h3>Choisissez le code source</h3><p>Pour Eglantine officiel, conservez <code>https://github.com/Eglantine-Community/Eglantine.git</code>. Entrez <code>nx2</code> pour la branche de développement, ou un tag comme <code>v0.1.0-rc3</code>.</p></div></li>
+          <li><span class="step-number">3</span><div><h3>Choisissez vos dossiers et l'App ID</h3><p>Sélectionnez votre dossier <code>sdk</code> Steamworks, le dossier Qt, le dossier SDK Vulkan, et un espace de compilation vide ou dédié. Entrez seulement un App ID que vous possédez ou que vous êtes expressément autorisé à utiliser, configuré pour Remote Play Together. L'outil ne modifie jamais votre installation Eglantine existante.</p></div></li>
+          <li><span class="step-number">4</span><div><h3>Terminez et attendez</h3><p>Après Terminer, une fenêtre PowerShell crée un nouveau package privé. Elle affiche le dossier de sortie, le chemin du zip, le journal de compilation et un rapport d'échec si quelque chose doit être corrigé.</p></div></li>
+        </ol>
+        <div class="notice tip"><strong>Pour un fork :</strong> collez son URL HTTPS GitHub publique et le nom exact de sa branche ou de son tag. Compilez seulement un fork auquel vous faites confiance : son CMake peut exécuter des commandes contrôlées par le dépôt sur votre PC. L'outil s'arrête sans modifier votre installation Eglantine normale lorsque le patch ne convient pas.</div>
+      </div>
+    </section>
+
+    <section class="section muted">
+      <div class="wrap language language-en">
+        <div class="section-heading"><p class="eyebrow">Play after a successful build</p><h2>Steam setup</h2></div>
+        <ol class="steps numbered compact">
+          <li><span class="step-number">1</span><div><p>Use an App ID that you own or are expressly authorized to use, and whose owner configured for Remote Play Together.</p></div></li>
+          <li><span class="step-number">2</span><div><p>Start Steam with an account permitted to use that App ID, then start the new <code>eglantine.exe</code> directly.</p></div></li>
+          <li><span class="step-number">3</span><div><p>Open <strong>Multiplayer</strong>, invite Steam friends, or choose <strong>Copy Remote Play Guest Link</strong>.</p></div></li>
+          <li><span class="step-number">4</span><div><p>To change the identity, choose <strong>Multiplayer → Change Steam App ID…</strong>, enter another authorized App ID, then restart Eglantine.</p></div></li>
+        </ol>
+      </div>
+
+      <div class="wrap language language-fr">
+        <div class="section-heading"><p class="eyebrow">Jouer après une compilation réussie</p><h2>Configuration Steam</h2></div>
+        <ol class="steps numbered compact">
+          <li><span class="step-number">1</span><div><p>Utilisez un App ID que vous possédez ou que vous êtes expressément autorisé à utiliser, et que son propriétaire a configuré pour Remote Play Together.</p></div></li>
+          <li><span class="step-number">2</span><div><p>Lancez Steam avec un compte autorisé à utiliser cet App ID, puis lancez le nouveau <code>eglantine.exe</code> directement.</p></div></li>
+          <li><span class="step-number">3</span><div><p>Ouvrez <strong>Multiplayer</strong>, invitez vos amis Steam, ou choisissez <strong>Copy Remote Play Guest Link</strong>.</p></div></li>
+          <li><span class="step-number">4</span><div><p>Pour changer l'identité, choisissez <strong>Multiplayer → Change Steam App ID…</strong>, entrez un autre App ID autorisé, puis relancez Eglantine.</p></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap language language-en">
+        <div class="section-heading"><p class="eyebrow">Troubleshooting</p><h2>If something does not work</h2></div>
+        <div class="faq">
+          <details><summary>The patch does not apply to my fork.</summary><p>The builder stops safely without changing your normal Eglantine install. Send the <code>last-build-failure.json</code> file and the log path printed in the PowerShell window. Do not send keys, game files, or your Steamworks SDK.</p></details>
+          <details><summary>A friend’s controller appears but does nothing.</summary><p>Press Shift+Tab, open Steam Controller Settings, and select a <strong>Gamepad</strong> template for each controller. The controller layout comes from the authorized application's Steam configuration.</p></details>
+          <details><summary>Player 1's controller stopped working.</summary><p>Turn on the host controller before guests join. If necessary, open Eglantine controls and select Player 1's controller again. The patch also tries to restore Player 1 when Steam replaces the original controller.</p></details>
+          <details><summary>Steam says it cannot connect or refuses the App ID.</summary><p>Use an App ID you own or are expressly authorized to use, and ensure its owner configured it for Remote Play Together. Check the account and App ID with that application's Steamworks owner.</p></details>
+        </div>
+      </div>
+
+      <div class="wrap language language-fr">
+        <div class="section-heading"><p class="eyebrow">Dépannage</p><h2>Si quelque chose ne fonctionne pas</h2></div>
+        <div class="faq">
+          <details><summary>Le patch ne s'applique pas à mon fork.</summary><p>L'outil s'arrête sans modifier votre installation Eglantine normale. Envoyez le fichier <code>last-build-failure.json</code> et le chemin du journal affiché dans la fenêtre PowerShell. N'envoyez pas vos clés, vos jeux ni votre SDK Steamworks.</p></details>
+          <details><summary>La manette d'un ami apparaît mais ne fait rien.</summary><p>Appuyez sur Maj+Tab, ouvrez les paramètres de manette Steam et choisissez un modèle <strong>Gamepad</strong> pour chaque manette. Le profil de la manette vient de la configuration Steam de l'application autorisée.</p></details>
+          <details><summary>La manette du joueur 1 ne fonctionne plus.</summary><p>Allumez la manette de l'hôte avant que les invités rejoignent la session. Si besoin, ouvrez les contrôles Eglantine et sélectionnez à nouveau la manette du joueur 1. Le patch essaie aussi de restaurer le joueur 1 lorsque Steam remplace la manette d'origine.</p></details>
+          <details><summary>Steam ne se connecte pas ou refuse l'App ID.</summary><p>Utilisez un App ID que vous possédez ou que vous êtes expressément autorisé à utiliser, et vérifiez que son propriétaire l'a configuré pour Remote Play Together. Vérifiez le compte et l'App ID avec le propriétaire Steamworks de l'application.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <section class="section muted">
+      <div class="wrap language language-en">
+        <div class="section-heading"><p class="eyebrow">Verify your download</p><h2>Builder checksum</h2></div>
+        <p>In PowerShell, open the extracted download folder and run:</p>
+        <pre><code>Get-FileHash .\Eglantine-Steam-Remote-Play-Builder.exe -Algorithm SHA256</code></pre>
+        <p>Expected SHA-256:</p>
+        <pre><code>658456f23ad09b10a6f0f7a379535187108113f364a7ff527002fc927d57e949</code></pre>
+        <p><a href="downloads/SHA256SUMS.txt">Download all checksums</a>.</p>
+      </div>
+      <div class="wrap language language-fr">
+        <div class="section-heading"><p class="eyebrow">Vérifier le téléchargement</p><h2>Somme de contrôle de l'outil</h2></div>
+        <p>Dans PowerShell, ouvrez le dossier téléchargé et extrait, puis lancez :</p>
+        <pre><code>Get-FileHash .\Eglantine-Steam-Remote-Play-Builder.exe -Algorithm SHA256</code></pre>
+        <p>SHA-256 attendu :</p>
+        <pre><code>658456f23ad09b10a6f0f7a379535187108113f364a7ff527002fc927d57e949</code></pre>
+        <p><a href="downloads/SHA256SUMS.txt">Télécharger toutes les sommes de contrôle</a>.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap language language-en">
+        <div class="section-heading"><p class="eyebrow">Privacy</p><h2>No analytics or account collection</h2></div>
+        <p>This static page has no analytics, advertising, contact form, or tracking service. It stores only your chosen page language in your browser's local storage.</p>
+        <p>The builder itself does not upload emulator keys, game files, Steamworks SDK files, or generated builds. The selected source can run its own build commands and network requests, so choose only a repository you trust and do not put private files in the build workspace.</p>
+      </div>
+      <div class="wrap language language-fr">
+        <div class="section-heading"><p class="eyebrow">Vie privée</p><h2>Ni analyse ni collecte de compte</h2></div>
+        <p>Cette page statique n'utilise ni analyse d'audience, ni publicité, ni formulaire de contact, ni service de suivi. Elle enregistre seulement la langue choisie dans le stockage local de votre navigateur.</p>
+        <p>L'outil lui-même n'envoie pas vos clés d'émulateur, fichiers de jeu, fichiers SDK Steamworks ni compilations générées. Le code source choisi peut exécuter ses propres commandes de compilation et requêtes réseau : choisissez donc uniquement un dépôt auquel vous faites confiance et ne placez pas de fichiers privés dans l'espace de compilation.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap language language-en">
+      <p><strong>Unofficial project.</strong> Not affiliated with Eglantine, Eden, Valve, Steam, or any application whose App ID a user enters.</p>
+      <p>The source patch and builder were created with AI assistance. Review the <a href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">builder source</a>, test it yourself, and follow the upstream project’s contribution and licensing policies before submitting anything upstream.</p>
+      <p><a href="https://github.com/mco2vie/eglantine-remote-together-">GitHub repository</a> · <a href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">Builder source</a> · <a href="downloads/steam-remote-play-together.patch">Source patch</a> · <a href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">Builder download</a></p>
+    </div>
+    <div class="wrap language language-fr">
+      <p><strong>Projet non officiel.</strong> Il n'est affilié ni à Eglantine, Eden, Valve, Steam, ni à une application dont un utilisateur entre l'App ID.</p>
+      <p>Le patch source et l'outil ont été créés avec l'aide d'une IA. Vérifiez le <a href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">code source de l'outil</a>, testez-le vous-même et respectez les règles de contribution et de licence du projet d'origine avant toute proposition en amont.</p>
+      <p><a href="https://github.com/mco2vie/eglantine-remote-together-">Dépôt GitHub</a> · <a href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">Code source de l'outil</a> · <a href="downloads/steam-remote-play-together.patch">Patch source</a> · <a href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">Télécharger l'outil</a></p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# GitHub Pages build output is deployed as an Actions artifact.
+_site/
+builder/output/
+builder/release/output/
+builder/BuildConfig.json
+
+# Do not accidentally add user-generated Steam/Eglantine runtime files.
+steam_api64.dll
+steam_api.dll
+libsteam_api.so
+libsteam_api.dylib
+eglantine.exe
+eglantine-steam-build/
+
+# Do not add private emulator data.
+keys/
+nand/
+sdmc/
+*.nsp
+*.xci
+*.nca
+*.prod.keys
+*.title.keys

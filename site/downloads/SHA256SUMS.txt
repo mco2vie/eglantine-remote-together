@@ -1,0 +1,3 @@
+658456f23ad09b10a6f0f7a379535187108113f364a7ff527002fc927d57e949  Eglantine-Steam-Remote-Play-Builder.exe
+319326719f24b33ec422b05d586772e0c21f9f6b2cd80fba03dd8662fc6d255e  Eglantine-Steam-Remote-Play-Builder.zip
+58002335aa9a8a132eefb32134d93f910407d6111e3fc4ef13ec72f148000440  steam-remote-play-together.patch
