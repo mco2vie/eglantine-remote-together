@@ -88,6 +88,9 @@ jobs:
           }
           $hasDirectUrl = -not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_URL)
           $hasReleaseAsset = -not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_RELEASE_TAG) -and -not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_ASSET_NAME)
+          if ($hasDirectUrl -and $env:GITHUB_EVENT_NAME -ne 'workflow_dispatch') {
+            throw "STEAMWORKS_SDK_URL is manual-only. Remove any stale repo variable or secret named STEAMWORKS_SDK_URL and use the private release asset settings for push and pull_request runs."
+          }
           if (-not $hasDirectUrl -and -not $hasReleaseAsset) {
             throw 'Steamworks SDK is missing. Set STEAMWORKS_SDK_URL, or set STEAMWORKS_SDK_RELEASE_TAG and STEAMWORKS_SDK_ASSET_NAME for a private GitHub Release asset. GitHub-hosted runners cannot authenticate to the Steamworks partner portal.'
           }
