@@ -207,6 +207,7 @@ jobs:
           name: ${{ env.RELEASE_NAME }}
           path: ${{ env.ARCHIVE_PATH }}
           if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 30 }}
 
       - name: Write PR artifact link
         if: ${{ github.event_name == 'pull_request' && steps.upload.outcome == 'success' }}
