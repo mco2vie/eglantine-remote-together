@@ -38,5 +38,3 @@ The easiest version is a private GitHub Release asset:
 This keeps the SDK out of the source tree while still letting a hosted runner fetch it without user login. A local filesystem path, a Steamworks.NET package, or an arbitrary non-Valve ZIP is not accepted by the builder.
 
 
-<!-- ci-trigger 2026-11-10 18:00:33 -->
-
