@@ -33,10 +33,10 @@
         <p class="lede">For developers who have authorized Steamworks access: build a compatible Eglantine version or GitHub fork on your own Windows PC. The feature is built into Eglantine, so you use its Multiplayer menu instead of RemotePlayForever.</p>
         <div class="actions">
           <a class="button primary" href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">Download the builder</a>
-          <a class="button secondary" href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">Review the builder source</a>
+          <a class="button secondary" href="https://github.com/mco2vie/eglantine-remote-together/tree/main/builder">Review the builder source</a>
           <a class="button secondary" href="downloads/steam-remote-play-together.patch">Download the source patch</a>
         </div>
-        <p class="small">The builder zip contains no Steamworks SDK files, Valve DLLs, or Steam App IDs. Review its <a href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">auditable source and release recipe</a> before running it.</p>
+        <p class="small">The builder zip contains no Steamworks SDK files, Valve DLLs, or Steam App IDs. Review its <a href="https://github.com/mco2vie/eglantine-remote-together/tree/main/builder">auditable source and release recipe</a> before running it.</p>
       </div>
 
       <div class="wrap language language-fr">
@@ -45,10 +45,10 @@
         <p class="lede">Pour les développeurs qui disposent d'un accès Steamworks autorisé : compilez une version compatible d'Eglantine ou un fork GitHub sur votre propre PC Windows. La fonction est intégrée dans Eglantine, vous utilisez donc son menu Multijoueur au lieu de RemotePlayForever.</p>
         <div class="actions">
           <a class="button primary" href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">Télécharger l'outil</a>
-          <a class="button secondary" href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">Vérifier le code source de l'outil</a>
+          <a class="button secondary" href="https://github.com/mco2vie/eglantine-remote-together/tree/main/builder">Vérifier le code source de l'outil</a>
           <a class="button secondary" href="downloads/steam-remote-play-together.patch">Télécharger le patch source</a>
         </div>
-        <p class="small">Le zip de l'outil ne contient aucun fichier du SDK Steamworks, DLL Valve ni App ID Steam. Vérifiez son <a href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">code source vérifiable et sa recette de publication</a> avant de le lancer.</p>
+        <p class="small">Le zip de l'outil ne contient aucun fichier du SDK Steamworks, DLL Valve ni App ID Steam. Vérifiez son <a href="https://github.com/mco2vie/eglantine-remote-together/tree/main/builder">code source vérifiable et sa recette de publication</a> avant de le lancer.</p>
       </div>
     </section>
 
@@ -107,33 +107,29 @@
       <div class="wrap language language-en">
         <div class="section-heading">
           <p class="eyebrow">Before the first build</p>
-          <h2>Install these once</h2>
-          <p>The wizard checks the folders you select. It does not install software without your approval.</p>
+          <h2>What you need</h2>
+          <p>You only prepare two things yourself. The wizard checks your PC and gets every other free tool for you, after asking.</p>
         </div>
         <ol class="steps requirements">
-          <li><strong>Windows 10 or Windows 11, 64-bit.</strong></li>
-          <li><a href="https://visualstudio.microsoft.com/vs/community/" rel="noopener noreferrer">Visual Studio Community</a> with <strong>Desktop development with C++</strong>.</li>
-          <li><a href="https://www.qt.io/download-qt-installer-oss" rel="noopener noreferrer">Qt for MSVC 2022 64-bit</a>, including the <strong>Qt Charts</strong> module. Qt 6.8.3 is the version tested with this patch.</li>
-          <li><a href="https://vulkan.lunarg.com/sdk/home#windows" rel="noopener noreferrer">Vulkan SDK</a>, including <code>glslangValidator.exe</code>.</li>
-          <li>Steamworks SDK 1.62 or newer, obtained through <a href="https://partner.steamgames.com/downloads/list" rel="noopener noreferrer">access authorized by Valve</a>. You also need an App ID you own or are expressly authorized to use, configured for Remote Play Together. Select the SDK folder named <code>sdk</code>.</li>
-          <li>At least <strong>15 GB free space</strong> in the build workspace.</li>
+          <li><strong>The Steamworks SDK zip</strong> (version 1.62 or newer), downloaded with your <a href="https://partner.steamgames.com/downloads/list" rel="noopener noreferrer">Steamworks account</a>. Keep the zip as it is: the wizard unzips it and usually finds it in your Downloads folder by itself.</li>
+          <li><strong>A Steam App ID</strong> that you own or are expressly authorized to use, configured for Remote Play Together.</li>
+          <li><strong>Windows 10 or 11, 64-bit</strong>, an internet connection, and about <strong>25 GB free</strong> the first time (15 GB if the Microsoft C++ compiler is already installed).</li>
         </ol>
+        <div class="notice tip"><strong>Installed or downloaded for you when missing:</strong> the Microsoft C++ compiler (free Visual Studio Build Tools, about 8 GB, from Microsoft's signed installer; Windows asks for administrator approval once), Git, Qt 6.8.3 with Qt Charts, and the glslang shader compiler. Qt, Git and glslang go into the build folder only, so they do not change the rest of your PC. Advanced users can still pick their own Qt or Vulkan SDK folders.</div>
       </div>
 
       <div class="wrap language language-fr">
         <div class="section-heading">
           <p class="eyebrow">Avant la première compilation</p>
-          <h2>Installez ces éléments une fois</h2>
-          <p>L'assistant vérifie les dossiers choisis. Il n'installe aucun logiciel sans votre accord.</p>
+          <h2>Ce qu'il vous faut</h2>
+          <p>Vous ne préparez que deux choses vous-même. L'assistant vérifie votre PC et récupère pour vous tous les autres outils gratuits, après vous avoir demandé.</p>
         </div>
         <ol class="steps requirements">
-          <li><strong>Windows 10 ou Windows 11, 64-bit.</strong></li>
-          <li><a href="https://visualstudio.microsoft.com/vs/community/" rel="noopener noreferrer">Visual Studio Community</a> avec <strong>Développement Desktop en C++</strong>.</li>
-          <li><a href="https://www.qt.io/download-qt-installer-oss" rel="noopener noreferrer">Qt pour MSVC 2022 64-bit</a>, avec le module <strong>Qt Charts</strong>. Qt 6.8.3 est la version testée avec ce patch.</li>
-          <li><a href="https://vulkan.lunarg.com/sdk/home#windows" rel="noopener noreferrer">SDK Vulkan</a>, avec <code>glslangValidator.exe</code>.</li>
-          <li>SDK Steamworks 1.62 ou plus récent, obtenu avec un <a href="https://partner.steamgames.com/downloads/list" rel="noopener noreferrer">accès autorisé par Valve</a>. Vous avez aussi besoin d'un App ID que vous possédez ou que vous êtes expressément autorisé à utiliser, configuré pour Remote Play Together. Sélectionnez le dossier SDK nommé <code>sdk</code>.</li>
-          <li>Au moins <strong>15 Go d'espace libre</strong> dans l'espace de compilation.</li>
+          <li><strong>Le zip du SDK Steamworks</strong> (version 1.62 ou plus récente), téléchargé avec votre <a href="https://partner.steamgames.com/downloads/list" rel="noopener noreferrer">compte Steamworks</a>. Gardez le zip tel quel : l'assistant le décompresse et le trouve généralement tout seul dans votre dossier Téléchargements.</li>
+          <li><strong>Un App ID Steam</strong> que vous possédez ou que vous êtes expressément autorisé à utiliser, configuré pour Remote Play Together.</li>
+          <li><strong>Windows 10 ou 11 en 64 bits</strong>, une connexion internet, et environ <strong>25 Go libres</strong> la première fois (15 Go si le compilateur Microsoft C++ est déjà installé).</li>
         </ol>
+        <div class="notice tip"><strong>Installés ou téléchargés pour vous s'ils manquent :</strong> le compilateur Microsoft C++ (Visual Studio Build Tools, gratuit, environ 8 Go, depuis l'installateur signé de Microsoft ; Windows demande une autorisation administrateur une fois), Git, Qt 6.8.3 avec Qt Charts, et le compilateur de shaders glslang. Qt, Git et glslang sont placés uniquement dans le dossier de compilation et ne modifient pas le reste de votre PC. Les utilisateurs avancés peuvent toujours choisir leurs propres dossiers Qt ou SDK Vulkan.</div>
       </div>
     </section>
 
@@ -142,9 +138,9 @@
         <div class="section-heading"><p class="eyebrow">Build a version or fork</p><h2>Four steps</h2></div>
         <ol class="steps numbered">
           <li><span class="step-number">1</span><div><h3>Download and extract</h3><p>Download <a href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">the builder zip</a>, extract it, then double-click <code>Eglantine-Steam-Remote-Play-Builder.exe</code>.</p></div></li>
-          <li><span class="step-number">2</span><div><h3>Choose the source</h3><p>For official Eglantine, keep <code>https://github.com/Eglantine-Community/Eglantine.git</code>. Enter <code>nx2</code> for the development branch, or a release tag such as <code>v0.1.0-rc3</code>.</p></div></li>
-          <li><span class="step-number">3</span><div><h3>Choose your folders and App ID</h3><p>Select your own Steamworks <code>sdk</code> folder, Qt folder, Vulkan SDK folder, and an empty or dedicated build workspace. Enter only an App ID you own or are expressly authorized to use, configured for Remote Play Together. The builder never changes your existing Eglantine installation.</p></div></li>
-          <li><span class="step-number">4</span><div><h3>Finish and wait</h3><p>After you click Finish, a PowerShell window builds a new private package. It prints the output folder, zip path, build log, and a failure report if something needs fixing.</p></div></li>
+          <li><span class="step-number">2</span><div><h3>Choose the source</h3><p>For official Eglantine, keep <code>https://github.com/Eglantine-Community/Eglantine.git</code>. Choose <strong>Branch</strong> or <strong>Release tag</strong>, then pick a name from the list: the default branch (<code>nx2</code>) is preselected, and a release tag such as <code>v0.1.0-rc3</code> is a fixed version.</p></div></li>
+          <li><span class="step-number">3</span><div><h3>Let the wizard check your PC</h3><p>It shows what is ready and what it will get for you. Keep <strong>Install the Microsoft C++ compiler for me</strong> ticked if it is missing. Then select the Steamworks SDK zip (or let the wizard find it) and enter an App ID you own or are expressly authorized to use, configured for Remote Play Together. The builder never changes your existing Eglantine installation.</p></div></li>
+          <li><span class="step-number">4</span><div><h3>Finish and wait</h3><p>After you click Install, the wizard itself shows each step (&ldquo;Step 1 of 6&rdquo;&hellip;) with a progress bar and the live log. The first build can take one to two hours, mostly downloads and compiling. When it is done, a button opens the folder with your new <code>eglantine.exe</code>. If something fails, the red message says what to fix, and running the builder again keeps what was already downloaded. Later builds only compile what changed, so they are much faster.</p></div></li>
         </ol>
         <div class="notice tip"><strong>For a fork:</strong> paste its public GitHub HTTPS URL and the exact branch or tag. Only build a fork you trust: its CMake build can run repository-controlled commands on your PC. The builder stops without changing your normal Eglantine install when the patch does not fit.</div>
       </div>
@@ -153,9 +149,9 @@
         <div class="section-heading"><p class="eyebrow">Compiler une version ou un fork</p><h2>Quatre étapes</h2></div>
         <ol class="steps numbered">
           <li><span class="step-number">1</span><div><h3>Téléchargez et extrayez</h3><p>Téléchargez <a href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">le zip de l'outil</a>, extrayez-le, puis double-cliquez sur <code>Eglantine-Steam-Remote-Play-Builder.exe</code>.</p></div></li>
-          <li><span class="step-number">2</span><div><h3>Choisissez le code source</h3><p>Pour Eglantine officiel, conservez <code>https://github.com/Eglantine-Community/Eglantine.git</code>. Entrez <code>nx2</code> pour la branche de développement, ou un tag comme <code>v0.1.0-rc3</code>.</p></div></li>
-          <li><span class="step-number">3</span><div><h3>Choisissez vos dossiers et l'App ID</h3><p>Sélectionnez votre dossier <code>sdk</code> Steamworks, le dossier Qt, le dossier SDK Vulkan, et un espace de compilation vide ou dédié. Entrez seulement un App ID que vous possédez ou que vous êtes expressément autorisé à utiliser, configuré pour Remote Play Together. L'outil ne modifie jamais votre installation Eglantine existante.</p></div></li>
-          <li><span class="step-number">4</span><div><h3>Terminez et attendez</h3><p>Après Terminer, une fenêtre PowerShell crée un nouveau package privé. Elle affiche le dossier de sortie, le chemin du zip, le journal de compilation et un rapport d'échec si quelque chose doit être corrigé.</p></div></li>
+          <li><span class="step-number">2</span><div><h3>Choisissez le code source</h3><p>Pour Eglantine officiel, conservez <code>https://github.com/Eglantine-Community/Eglantine.git</code>. Choisissez <strong>Branche</strong> ou <strong>Tag de version</strong>, puis un nom dans la liste : la branche par défaut (<code>nx2</code>) est présélectionnée, et un tag comme <code>v0.1.0-rc3</code> est une version figée.</p></div></li>
+          <li><span class="step-number">3</span><div><h3>Laissez l'assistant vérifier votre PC</h3><p>Il affiche ce qui est prêt et ce qu'il va récupérer pour vous. Laissez cochée la case <strong>Installer le compilateur Microsoft C++ pour moi</strong> s'il manque. Sélectionnez ensuite le zip du SDK Steamworks (ou laissez l'assistant le trouver) et entrez un App ID que vous possédez ou que vous êtes expressément autorisé à utiliser, configuré pour Remote Play Together. L'outil ne modifie jamais votre installation Eglantine existante.</p></div></li>
+          <li><span class="step-number">4</span><div><h3>Terminez et attendez</h3><p>Après Installer, l'assistant affiche lui-même chaque étape (&laquo;&nbsp;Étape 1 sur 6&nbsp;&raquo;&hellip;) avec une barre de progression et le journal en direct. La première compilation peut prendre une à deux heures, surtout pour les téléchargements et la compilation. À la fin, un bouton ouvre le dossier contenant votre nouvel <code>eglantine.exe</code>. En cas d'échec, le message en rouge indique quoi corriger, et relancer l'outil conserve ce qui a déjà été téléchargé. Les compilations suivantes ne recompilent que ce qui a changé : elles sont beaucoup plus rapides.</p></div></li>
         </ol>
         <div class="notice tip"><strong>Pour un fork :</strong> collez son URL HTTPS GitHub publique et le nom exact de sa branche ou de son tag. Compilez seulement un fork auquel vous faites confiance : son CMake peut exécuter des commandes contrôlées par le dépôt sur votre PC. L'outil s'arrête sans modifier votre installation Eglantine normale lorsque le patch ne convient pas.</div>
       </div>
@@ -211,7 +207,7 @@
         <p>In PowerShell, open the extracted download folder and run:</p>
         <pre><code>Get-FileHash .\Eglantine-Steam-Remote-Play-Builder.exe -Algorithm SHA256</code></pre>
         <p>Expected SHA-256:</p>
-        <pre><code>658456f23ad09b10a6f0f7a379535187108113f364a7ff527002fc927d57e949</code></pre>
+        <pre><code>9aa674ab21a59140322db447a6141eba6a176105b211e7649f632509ba6c0d57</code></pre>
         <p><a href="downloads/SHA256SUMS.txt">Download all checksums</a>.</p>
       </div>
       <div class="wrap language language-fr">
@@ -219,7 +215,7 @@
         <p>Dans PowerShell, ouvrez le dossier téléchargé et extrait, puis lancez :</p>
         <pre><code>Get-FileHash .\Eglantine-Steam-Remote-Play-Builder.exe -Algorithm SHA256</code></pre>
         <p>SHA-256 attendu :</p>
-        <pre><code>658456f23ad09b10a6f0f7a379535187108113f364a7ff527002fc927d57e949</code></pre>
+        <pre><code>9aa674ab21a59140322db447a6141eba6a176105b211e7649f632509ba6c0d57</code></pre>
         <p><a href="downloads/SHA256SUMS.txt">Télécharger toutes les sommes de contrôle</a>.</p>
       </div>
     </section>
@@ -228,11 +224,13 @@
       <div class="wrap language language-en">
         <div class="section-heading"><p class="eyebrow">Privacy</p><h2>No analytics or account collection</h2></div>
         <p>This static page has no analytics, advertising, contact form, or tracking service. It stores only your chosen page language in your browser's local storage.</p>
+        <p>To get missing tools, the builder downloads only from Microsoft (Visual Studio Build Tools), GitHub (Git, glslang, aqtinstall, and the source you chose) and Qt's official servers. Each download is checked against a fixed SHA-256 or Microsoft's signature.</p>
         <p>The builder itself does not upload emulator keys, game files, Steamworks SDK files, or generated builds. The selected source can run its own build commands and network requests, so choose only a repository you trust and do not put private files in the build workspace.</p>
       </div>
       <div class="wrap language language-fr">
         <div class="section-heading"><p class="eyebrow">Vie privée</p><h2>Ni analyse ni collecte de compte</h2></div>
         <p>Cette page statique n'utilise ni analyse d'audience, ni publicité, ni formulaire de contact, ni service de suivi. Elle enregistre seulement la langue choisie dans le stockage local de votre navigateur.</p>
+        <p>Pour récupérer les outils manquants, l'outil télécharge uniquement depuis Microsoft (Visual Studio Build Tools), GitHub (Git, glslang, aqtinstall et le code source choisi) et les serveurs officiels de Qt. Chaque téléchargement est vérifié avec un SHA-256 fixe ou la signature de Microsoft.</p>
         <p>L'outil lui-même n'envoie pas vos clés d'émulateur, fichiers de jeu, fichiers SDK Steamworks ni compilations générées. Le code source choisi peut exécuter ses propres commandes de compilation et requêtes réseau : choisissez donc uniquement un dépôt auquel vous faites confiance et ne placez pas de fichiers privés dans l'espace de compilation.</p>
       </div>
     </section>
@@ -241,13 +239,13 @@
   <footer class="site-footer">
     <div class="wrap language language-en">
       <p><strong>Unofficial project.</strong> Not affiliated with Eglantine, Eden, Valve, Steam, or any application whose App ID a user enters.</p>
-      <p>The source patch and builder were created with AI assistance. Review the <a href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">builder source</a>, test it yourself, and follow the upstream project’s contribution and licensing policies before submitting anything upstream.</p>
-      <p><a href="https://github.com/mco2vie/eglantine-remote-together-">GitHub repository</a> · <a href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">Builder source</a> · <a href="downloads/steam-remote-play-together.patch">Source patch</a> · <a href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">Builder download</a></p>
+      <p>The source patch and builder were created with AI assistance. Review the <a href="https://github.com/mco2vie/eglantine-remote-together/tree/main/builder">builder source</a>, test it yourself, and follow the upstream project's contribution and licensing policies before submitting anything upstream.</p>
+      <p><a href="https://github.com/mco2vie/eglantine-remote-together">GitHub repository</a> · <a href="https://github.com/mco2vie/eglantine-remote-together/tree/main/builder">Builder source</a> · <a href="downloads/steam-remote-play-together.patch">Source patch</a> · <a href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">Builder download</a></p>
     </div>
     <div class="wrap language language-fr">
       <p><strong>Projet non officiel.</strong> Il n'est affilié ni à Eglantine, Eden, Valve, Steam, ni à une application dont un utilisateur entre l'App ID.</p>
-      <p>Le patch source et l'outil ont été créés avec l'aide d'une IA. Vérifiez le <a href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">code source de l'outil</a>, testez-le vous-même et respectez les règles de contribution et de licence du projet d'origine avant toute proposition en amont.</p>
-      <p><a href="https://github.com/mco2vie/eglantine-remote-together-">Dépôt GitHub</a> · <a href="https://github.com/mco2vie/eglantine-remote-together-/tree/main/builder">Code source de l'outil</a> · <a href="downloads/steam-remote-play-together.patch">Patch source</a> · <a href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">Télécharger l'outil</a></p>
+      <p>Le patch source et l'outil ont été créés avec l'aide d'une IA. Vérifiez le <a href="https://github.com/mco2vie/eglantine-remote-together/tree/main/builder">code source de l'outil</a>, testez-le vous-même et respectez les règles de contribution et de licence du projet d'origine avant toute proposition en amont.</p>
+      <p><a href="https://github.com/mco2vie/eglantine-remote-together">Dépôt GitHub</a> · <a href="https://github.com/mco2vie/eglantine-remote-together/tree/main/builder">Code source de l'outil</a> · <a href="downloads/steam-remote-play-together.patch">Patch source</a> · <a href="downloads/Eglantine-Steam-Remote-Play-Builder.zip">Télécharger l'outil</a></p>
     </div>
   </footer>
 </body>

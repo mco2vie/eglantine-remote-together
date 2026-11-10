@@ -15,7 +15,7 @@ The repository must never contain a generated patched Eglantine build, `steam_ap
 ## Simple method: GitHub Desktop
 
 1. Install [GitHub Desktop](https://desktop.github.com/) and sign in to your GitHub account.
-2. Choose **File → Clone repository**, select `mco2vie/eglantine-remote-together-`, and choose a folder on your PC.
+2. Choose **File → Clone repository**, select `mco2vie/eglantine-remote-together`, and choose a folder on your PC.
 3. Copy the prepared repository files into that cloned folder, preserving these folders:
 
    ```text
@@ -30,13 +30,13 @@ The repository must never contain a generated patched Eglantine build, `steam_ap
 
 ## Enable GitHub Pages
 
-1. Open [the repository Settings page](https://github.com/mco2vie/eglantine-remote-together-/settings/pages).
+1. Open [the repository Settings page](https://github.com/mco2vie/eglantine-remote-together/settings/pages).
 2. Under **Build and deployment**, choose **GitHub Actions**.
-3. Open [Actions](https://github.com/mco2vie/eglantine-remote-together-/actions), select **Deploy GitHub Pages**, and wait for it to finish.
+3. Open [Actions](https://github.com/mco2vie/eglantine-remote-together/actions), select **Deploy GitHub Pages**, and wait for it to finish.
 4. The site URL should be:
 
    ```text
-   https://mco2vie.github.io/eglantine-remote-together-/
+   https://mco2vie.github.io/eglantine-remote-together/
    ```
 
 ## Suggested repository description

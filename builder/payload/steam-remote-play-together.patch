@@ -843,10 +843,10 @@ index 4da66ce..7bb69a9 100644
      QFuture<std::optional<Common::Net::Release>> update_future;
 diff --git a/src/yuzu/steam_remote_play.cpp b/src/yuzu/steam_remote_play.cpp
 new file mode 100644
-index 0000000..fae6941
+index 0000000..f549e06
 --- /dev/null
 +++ b/src/yuzu/steam_remote_play.cpp
-@@ -0,0 +1,980 @@
+@@ -0,0 +1,992 @@
 +// SPDX-FileCopyrightText: Copyright 2026 Eden Emulator Project
 +// SPDX-License-Identifier: GPL-3.0-or-later
 +
@@ -1426,6 +1426,18 @@ index 0000000..fae6941
 +    return fmt::format("Guest {}", slot + 1);
 +}
 +
++// Steamworks SDK 1.62 names the event union of RemotePlayInput_t "data"; SDK 1.63 and later
++// make it anonymous. Only the overload that matches the installed SDK compiles.
++template <typename Event>
++auto GuestKey(const Event& event) -> const decltype(event.data.m_Key)& {
++    return event.data.m_Key;
++}
++
++template <typename Event>
++auto GuestKey(const Event& event) -> const decltype(event.m_Key)& {
++    return event.m_Key;
++}
++
 +void Manager::Impl::ReadGuestInput() {
 +    if (!direct_input) {
 +        return;
@@ -1450,7 +1462,7 @@ index 0000000..fae6941
 +            if (guest == guests.end() || keyboard == nullptr) {
 +                continue;
 +            }
-+            keyboard->SetKey(guest->keyboard_slot, event.data.m_Key.m_eScancode,
++            keyboard->SetKey(guest->keyboard_slot, GuestKey(event).m_eScancode,
 +                             event.m_eType == k_ERemotePlayInputKeyDown);
 +        }
 +    } while (count == events.size());
