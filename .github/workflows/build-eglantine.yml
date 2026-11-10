@@ -63,7 +63,7 @@ jobs:
       REPOSITORY_URL: ${{ github.event.inputs.repository_url || vars.EGLANTINE_BUILD_REPO_URL || 'https://github.com/Eglantine-Community/Eglantine.git' }}
       GIT_REF: ${{ github.event.inputs.git_ref || vars.EGLANTINE_BUILD_REF || 'main' }}
       STEAM_APP_ID: ${{ github.event.inputs.steam_app_id || vars.STEAM_APP_ID || '480' }}
-      STEAMWORKS_SDK_URL: ${{ github.event.inputs.steamworks_sdk_url || vars.STEAMWORKS_SDK_URL || secrets.STEAMWORKS_SDK_URL || 'https://github.com/mco2vie/eglantine-remote-together/releases/download/steamworks-sdk-165/steamworks_sdk_165.zip' }}
+      STEAMWORKS_SDK_URL: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.steamworks_sdk_url || '' }}
       STEAMWORKS_SDK_RELEASE_TAG: ${{ github.event.inputs.steamworks_sdk_release_tag || vars.STEAMWORKS_SDK_RELEASE_TAG || 'steamworks-sdk-165' }}
       STEAMWORKS_SDK_ASSET_NAME: ${{ github.event.inputs.steamworks_sdk_asset_name || vars.STEAMWORKS_SDK_ASSET_NAME || 'steamworks_sdk_165.zip' }}
       STEAMWORKS_SDK_REPO: ${{ github.event.inputs.steamworks_sdk_repo || vars.STEAMWORKS_SDK_REPO || github.repository }}
