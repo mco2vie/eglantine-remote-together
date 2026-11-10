@@ -75,7 +75,7 @@ jobs:
       STEAMWORKS_SDK_RELEASE_TAG: ${{ github.event.inputs.steamworks_sdk_release_tag || vars.STEAMWORKS_SDK_RELEASE_TAG || 'steamworks-sdk-165' }}
       STEAMWORKS_SDK_ASSET_NAME: ${{ github.event.inputs.steamworks_sdk_asset_name || vars.STEAMWORKS_SDK_ASSET_NAME || 'steamworks_sdk_165.zip' }}
       STEAMWORKS_SDK_REPO: ${{ github.event.inputs.steamworks_sdk_repo || vars.STEAMWORKS_SDK_REPO || github.repository }}
-      CREATE_RELEASE: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event.inputs.create_release == 'true' }}
+      CREATE_RELEASE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}
       RELEASE_NAME: ${{ github.event.inputs.release_name || vars.EGLANTINE_BUILD_RELEASE_NAME || format('Eglantine Remote Play {0}', github.run_number) }}
     steps:
       - name: Check out builder repo
