@@ -1,40 +1,46 @@
-﻿# Eglantine Remote Together
+# Eglantine Remote Together
 
-Static GitHub Pages guide for trying the private, source-built Steam Remote Play Together patch for compatible [Eglantine](https://github.com/Eglantine-Community/Eglantine) versions and public GitHub forks.
+This repository contains the source, documentation, builder logic, and GitHub Actions automation for a private Eglantine Steam Remote Play Together patch flow.
 
-The deployed site lives in [`site/`](site/). It includes:
+It is not a public binary distribution. The repo intentionally does not include generated builds, `steam_api64.dll`, Valve runtime material, Steamworks SDK content, keys, game files, or game dumps.
 
-- English and French setup instructions;
-- a download for the shareable Patch & Build wizard;
-- the source patch and SHA-256 checksums;
-- explicit requirements, privacy, licensing, and troubleshooting guidance.
+## Repository layout
 
-## What this repository may contain
+- `builder/` — Windows build wizard and PowerShell patch logic
+- `site/` — static GitHub Pages site for the project docs and downloads
+- `.github/workflows/build-eglantine.yml` — automated build workflow for PRs, main pushes, and manual runs
+- `LICENSE`, `NOTICE.md`, `LICENSE-NOTICE.md` — licensing and attribution
 
-This repository intentionally contains only:
+## What this project is
 
-- static documentation;
-- the source patch;
-- the Patch & Build wizard, which contains no Steamworks SDK material or Valve runtime DLL.
+This project is meant to help an authorized user build a private patched Eglantine build with Steam Remote Play Together support.
 
-It must **not** contain a generated patched Eglantine build, `steam_api64.dll`, the Steamworks SDK, keys, game files, or game dumps.
+The build expects:
 
-Each user obtains Steamworks through access authorized by Valve, supplies an App ID they own or are explicitly authorized to use, and builds their own private output locally. The builder checks the source patch and prepares an isolated local build workspace. A compatible build exposes Steam Remote Play Together in Eglantine's Multiplayer menu, including friend invites, guest links, controller handling, and App ID selection.
+- a public Eglantine repo or fork URL
+- a branch or tag to build
+- a Steam App ID the user owns or is explicitly authorized to use
+- a real Valve Steamworks SDK archive (`steamworks_sdk_*.zip`) provided through a private direct URL or private release asset
 
-The `STEAMWORKS_SDK_URL` value must be a real Valve Steamworks SDK archive, usually a direct download from the Steamworks partner portal such as `https://partner.steamgames.com/downloads/steamworks_sdk_*.zip`. There is no generic public SDK URL for a normal app; a random ZIP or a different Steam download is rejected by the builder.
+The workflow validates the SDK before patching/building. Random ZIP files, partial archives, or wrapper packages such as Steamworks.NET standalone zips are rejected.
 
-## Private SDK hosting for GitHub Actions
+## What this project is not
 
-The recommended GitHub-hosted pattern is to keep the SDK out of git and upload the official `steamworks_sdk_*.zip` to a private location that the runner can fetch directly.
+- a generic, public Eglantine release repo
+- a place to store the Steamworks SDK or built binaries
+- a mirror for Valve runtime DLLs or SDK headers
 
-The easiest version is a private GitHub Release asset:
+## Private SDK handling
 
-1. Upload the official Valve Steamworks SDK ZIP as a release asset in a private repository or a private release in the same repository.
-2. Set one of the following:
-   - `STEAMWORKS_SDK_URL` to the direct asset URL; or
-   - `STEAMWORKS_SDK_RELEASE_TAG` + `STEAMWORKS_SDK_ASSET_NAME` + `STEAMWORKS_SDK_REPO` if you want the workflow to resolve the private asset via the GitHub API.
-3. Trigger the build; the workflow will download the private SDK at runtime and then validate it before patching.
+GitHub-hosted runners cannot log in to the Steamworks partner portal, so the workflow expects the SDK to be available through a private, direct HTTP(S) URL or a private GitHub Release asset.
 
-This keeps the SDK out of the source tree while still letting a hosted runner fetch it without user login. A local filesystem path, a Steamworks.NET package, or an arbitrary non-Valve ZIP is not accepted by the builder.
+The direct URL input is intended for manual `workflow_dispatch` runs. Automated push/PR builds should use the release asset configuration, not a local machine path.
+
+## Build rules and boundaries
+
+- The repo remains source-only: no generated output is committed.
+- The builder validates the official Valve SDK layout before continuing.
+- The build only works for authorized Steam App IDs and valid private SDK access.
+- Users must review the patch, source, and upstream licensing before using or redistributing anything generated from this project.
 
 
