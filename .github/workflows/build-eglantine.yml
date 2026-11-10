@@ -24,7 +24,7 @@ on:
         required: true
         default: '480'
       steamworks_sdk_url:
-        description: 'Direct download URL to the Valve Steamworks SDK zip (must be a real steamworks_sdk_*.zip from the Steamworks partner portal; not a random archive).'
+        description: 'Direct download URL to the Steamworks SDK zip. The builder validates the downloaded archive contents later, so a valid partner URL or another direct .zip URL is allowed.'
         required: true
         default: ''
       create_release:
@@ -70,8 +70,8 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_URL)) {
             throw 'Steamworks SDK URL is empty. Set STEAMWORKS_SDK_URL or provide a steamworks_sdk_url input.'
           }
-          if ($env:STEAMWORKS_SDK_URL -notmatch '(?i)steamworks_sdk_[^/?#]+\.zip(?:$|[?#])') {
-            throw "STEAMWORKS_SDK_URL must point to a Valve Steamworks SDK zip, for example https://partner.steamgames.com/downloads/steamworks_sdk_153.zip. The URL you provided does not match the expected naming convention: $env:STEAMWORKS_SDK_URL"
+          if ($env:STEAMWORKS_SDK_URL -notmatch '(?i)^https?://.+\.zip(?:$|[?#])') {
+            throw "STEAMWORKS_SDK_URL must be a direct HTTP(S) download URL to a zip archive. The builder validates the downloaded archive contents later, so a Valve partner URL or another direct .zip URL is allowed: $env:STEAMWORKS_SDK_URL"
           }
           if (-not [UInt32]::TryParse($env:STEAM_APP_ID, [ref]$parsedAppId) -or $parsedAppId -eq 0) {
             throw "Steam App ID must be a positive number: $env:STEAM_APP_ID"
