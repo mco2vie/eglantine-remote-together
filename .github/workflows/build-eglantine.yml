@@ -25,7 +25,19 @@ on:
         default: '480'
       steamworks_sdk_url:
         description: 'Direct HTTPS download URL to the Steamworks SDK zip. For GitHub-hosted runners, use a direct private URL (for example a GitHub release asset, Azure Blob, S3, or self-hosted runner file). Steamworks partner login is not possible in a hosted runner.'
-        required: true
+        required: false
+        default: ''
+      steamworks_sdk_release_tag:
+        description: 'Optional GitHub release tag containing the private Steamworks SDK asset. Use this instead of a direct URL when the SDK is stored in a private GitHub Release.'
+        required: false
+        default: ''
+      steamworks_sdk_asset_name:
+        description: 'Optional GitHub release asset name for the private Steamworks SDK zip. Required when steamworks_sdk_release_tag is set.'
+        required: false
+        default: ''
+      steamworks_sdk_repo:
+        description: 'Optional repository containing the private Steamworks SDK release asset. Defaults to the current repository.'
+        required: false
         default: ''
       create_release:
         description: 'Upload the build as a GitHub Release instead of an artifact only.'
@@ -52,6 +64,9 @@ jobs:
       GIT_REF: ${{ github.event.inputs.git_ref || vars.EGLANTINE_BUILD_REF || 'main' }}
       STEAM_APP_ID: ${{ github.event.inputs.steam_app_id || vars.STEAM_APP_ID || '480' }}
       STEAMWORKS_SDK_URL: ${{ github.event.inputs.steamworks_sdk_url || vars.STEAMWORKS_SDK_URL || secrets.STEAMWORKS_SDK_URL || '' }}
+      STEAMWORKS_SDK_RELEASE_TAG: ${{ github.event.inputs.steamworks_sdk_release_tag || vars.STEAMWORKS_SDK_RELEASE_TAG || '' }}
+      STEAMWORKS_SDK_ASSET_NAME: ${{ github.event.inputs.steamworks_sdk_asset_name || vars.STEAMWORKS_SDK_ASSET_NAME || '' }}
+      STEAMWORKS_SDK_REPO: ${{ github.event.inputs.steamworks_sdk_repo || vars.STEAMWORKS_SDK_REPO || github.repository }}
       CREATE_RELEASE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event.inputs.create_release == 'true' }}
       RELEASE_NAME: ${{ github.event.inputs.release_name || vars.EGLANTINE_BUILD_RELEASE_NAME || format('Eglantine Remote Play {0}', github.run_number) }}
     steps:
@@ -67,10 +82,12 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:GIT_REF)) {
             throw 'Git reference is empty. Set EGLANTINE_BUILD_REF or provide a git_ref input.'
           }
-          if ([string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_URL)) {
-            throw 'Steamworks SDK URL is empty. Set a direct private download URL in STEAMWORKS_SDK_URL, or pass a steamworks_sdk_url input. GitHub-hosted runners cannot authenticate to the Steamworks partner portal.'
+          $hasDirectUrl = -not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_URL)
+          $hasReleaseAsset = -not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_RELEASE_TAG) -and -not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_ASSET_NAME)
+          if (-not $hasDirectUrl -and -not $hasReleaseAsset) {
+            throw 'Steamworks SDK is missing. Set STEAMWORKS_SDK_URL, or set STEAMWORKS_SDK_RELEASE_TAG and STEAMWORKS_SDK_ASSET_NAME for a private GitHub Release asset. GitHub-hosted runners cannot authenticate to the Steamworks partner portal.'
           }
-          if ($env:STEAMWORKS_SDK_URL -notmatch '(?i)^https?://.+\.zip(?:$|[?#])') {
+          if ($hasDirectUrl -and $env:STEAMWORKS_SDK_URL -notmatch '(?i)^https?://.+\.zip(?:$|[?#])') {
             throw "STEAMWORKS_SDK_URL must be a direct HTTP(S) download URL to a zip archive. GitHub-hosted runners cannot log in to the Steamworks partner portal. Use a direct private URL instead: $env:STEAMWORKS_SDK_URL"
           }
           if (-not [UInt32]::TryParse($env:STEAM_APP_ID, [ref]$parsedAppId) -or $parsedAppId -eq 0) {
@@ -81,10 +98,41 @@ jobs:
           Write-Host "Reference: $env:GIT_REF"
           Write-Host "Steam App ID: $env:STEAM_APP_ID"
 
-      - name: Download Steamworks SDK
+      - name: Resolve private Steamworks SDK
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $sdkZip = Join-Path $env:RUNNER_TEMP 'steamworks-sdk.zip'
-          Invoke-WebRequest -Uri $env:STEAMWORKS_SDK_URL -OutFile $sdkZip -UseBasicParsing
+
+          if (-not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_URL)) {
+            $sdkUrl = $env:STEAMWORKS_SDK_URL
+            Write-Host "Downloading the Steamworks SDK from the configured direct URL."
+            Invoke-WebRequest -Uri $sdkUrl -OutFile $sdkZip -UseBasicParsing
+          }
+          else {
+            $releaseTag = $env:STEAMWORKS_SDK_RELEASE_TAG
+            $assetName = $env:STEAMWORKS_SDK_ASSET_NAME
+            $repo = $env:STEAMWORKS_SDK_REPO
+            if ([string]::IsNullOrWhiteSpace($releaseTag) -or [string]::IsNullOrWhiteSpace($assetName) -or [string]::IsNullOrWhiteSpace($repo)) {
+              throw 'A private GitHub Release asset was selected, but the required variables are missing: STEAMWORKS_SDK_RELEASE_TAG, STEAMWORKS_SDK_ASSET_NAME, and STEAMWORKS_SDK_REPO.'
+            }
+
+            $releaseApi = "https://api.github.com/repos/$repo/releases/tags/$releaseTag"
+            $headers = @{
+              Authorization = "Bearer $env:GITHUB_TOKEN"
+              Accept = 'application/vnd.github+json'
+              'X-GitHub-Api-Version' = '2022-11-28'
+            }
+            $release = Invoke-RestMethod -Uri $releaseApi -Headers $headers
+            $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
+            if (-not $asset) {
+              throw "No GitHub Release asset named '$assetName' was found in $repo at tag '$releaseTag'."
+            }
+
+            Write-Host "Downloading the Steamworks SDK from the private GitHub Release asset '$assetName'."
+            Invoke-WebRequest -Uri $asset.url -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN"; Accept = 'application/octet-stream'; 'X-GitHub-Api-Version' = '2022-11-28' } -OutFile $sdkZip -UseBasicParsing
+          }
+
           if (-not (Test-Path -LiteralPath $sdkZip -PathType Leaf)) {
             throw "Steamworks SDK download did not produce $sdkZip"
           }
