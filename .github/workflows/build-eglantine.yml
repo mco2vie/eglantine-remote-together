@@ -56,6 +56,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: eglantine-build
+  cancel-in-progress: false
+
 jobs:
   build-eglantine:
     runs-on: windows-2022
