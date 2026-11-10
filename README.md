@@ -20,3 +20,5 @@ This repository intentionally contains only:
 It must **not** contain a generated patched Eglantine build, `steam_api64.dll`, the Steamworks SDK, keys, game files, or game dumps.
 
 Each user obtains Steamworks through access authorized by Valve, supplies an App ID they own or are explicitly authorized to use, and builds their own private output locally. The builder checks the source patch and prepares an isolated local build workspace. A compatible build exposes Steam Remote Play Together in Eglantine's Multiplayer menu, including friend invites, guest links, controller handling, and App ID selection.
+
+The `STEAMWORKS_SDK_URL` value must be a real Valve Steamworks SDK archive, usually a direct download from the Steamworks partner portal such as `https://partner.steamgames.com/downloads/steamworks_sdk_*.zip`. There is no generic public SDK URL for a normal app; a random ZIP or a different Steam download is rejected by the builder.
