@@ -44,10 +44,10 @@ on:
         required: false
         default: ''
       create_release:
-        description: 'Upload the build as a GitHub Release instead of an artifact only.'
+        description: 'Upload the build as a GitHub Release instead of an artifact only. Manual runs default to a direct download release asset.'
         type: boolean
         required: false
-        default: false
+        default: true
       release_name:
         description: 'Optional release title. Defaults to a generated value.'
         required: false
@@ -75,7 +75,7 @@ jobs:
       STEAMWORKS_SDK_RELEASE_TAG: ${{ github.event.inputs.steamworks_sdk_release_tag || vars.STEAMWORKS_SDK_RELEASE_TAG || 'steamworks-sdk-165' }}
       STEAMWORKS_SDK_ASSET_NAME: ${{ github.event.inputs.steamworks_sdk_asset_name || vars.STEAMWORKS_SDK_ASSET_NAME || 'steamworks_sdk_165.zip' }}
       STEAMWORKS_SDK_REPO: ${{ github.event.inputs.steamworks_sdk_repo || vars.STEAMWORKS_SDK_REPO || github.repository }}
-      CREATE_RELEASE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event.inputs.create_release == 'true' }}
+      CREATE_RELEASE: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event.inputs.create_release == 'true' }}
       RELEASE_NAME: ${{ github.event.inputs.release_name || vars.EGLANTINE_BUILD_RELEASE_NAME || format('Eglantine Remote Play {0}', github.run_number) }}
     steps:
       - name: Check out builder repo
@@ -201,7 +201,7 @@ jobs:
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
-        if: ${{ env.CREATE_RELEASE != 'true' }}
+        if: ${{ env.CREATE_RELEASE != 'true' && github.event_name != 'workflow_dispatch' }}
         with:
           name: ${{ env.RELEASE_NAME }}
           path: ${{ env.ARCHIVE_PATH }}
@@ -211,7 +211,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: ${{ env.CREATE_RELEASE == 'true' }}
         with:
-          tag_name: main-${{ github.run_number }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('manual-{0}', github.run_number) || format('main-{0}', github.run_number) }}
           name: ${{ env.RELEASE_NAME }}
           files: ${{ env.ARCHIVE_PATH }}
           draft: false
