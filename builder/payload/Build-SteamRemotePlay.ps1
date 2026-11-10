@@ -1,27 +1,123 @@
-# Eglantine Steam Remote Play Builder
+﻿# Eglantine Steam Remote Play Builder
 # Creates a private Windows build from a user-selected, trusted GitHub Eglantine repository.
 # It never edits an existing emulator install or deletes user source files.
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ConfigPath
+    [string]$ConfigPath,
+    # When the wizard runs the build, it shows progress from this small status file.
+    [string]$StatusPath = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$BuilderVersion = '1.1.0'
+$BuilderVersion = '1.2.0'
 # Kept in step with payload/steam-remote-play-together.patch when a compatible feature update ships.
-$ExpectedPatchSha256 = '58002335aa9a8a132eefb32134d93f910407d6111e3fc4ef13ec72f148000440'
+$ExpectedPatchSha256 = 'abe36ec9a72e3c038f81bf889e586a6243e589732ca04bb3f4adfbe662e38bc9'
 # The app ID must be one you own or are explicitly authorized to use, and configured for
 # Remote Play Together. This builder does not grant permission to use another game's App ID.
 # The App ID can be changed later from Eglantine's Multiplayer menu.
 $MinimumFreeSpace = 15GB
+$MinimumCmake = [Version]'3.31.0'
+
+# Tools the builder downloads into <workspace>\cache\tools when the user did not pick their own.
+# Every download is pinned and checked against its SHA-256. These match Eglantine's own Windows CI
+# (Qt 6.8.3 with Qt Charts from aqtinstall). Keep the versions in step with Check-Requirements.ps1.
+$QtVersion = '6.8.3'
+$QtArch = 'win64_msvc2022_64'
+$AqtTool = @{
+    Version = '3.3.0'
+    Url = 'https://github.com/miurahr/aqtinstall/releases/download/v3.3.0/aqt.exe'
+    Sha256 = '4f74d4c95c464d238d7e17ec2d9b7f22a7c333f0f5270a62584e2b47fc765150'
+}
+$GlslangTool = @{
+    Version = '16.6.0'
+    Url = 'https://github.com/KhronosGroup/glslang/releases/download/16.6.0/glslang-16.6.0-windows-x86_64-release.zip'
+    Sha256 = '82bf434e69b9bb4829de7e2b4bc2c5e7a7861e53d66cf75e5cc70f5f694a8d9b'
+}
+$MinGitTool = @{
+    Version = '2.56.0.2'
+    Url = 'https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.2/MinGit-2.56.0.2-64-bit.zip'
+    Sha256 = 'da35e72aa21c005a5a0d298cfbae110bc1609a815730ea0dde84b01a1b3cd3be'
+}
+# Eglantine's CMake patches some libraries with GNU patch, which on Windows ships only with the
+# full Git for Windows (usr\bin\patch.exe), not with MinGit or Visual Studio's Git. Only usr\bin of
+# this archive is extracted, and only when no patch.exe is found.
+$GitForWindowsTool = @{
+    Version = '2.56.0.2'
+    Url = 'https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.2/Git-2.56.0.2-64-bit.tar.bz2'
+    Sha256 = '16ca394bdb94b372267d79e1e10b68763674f73e03e0648202a7971a8a730a84'
+}
+# Compiler cache, the same version Eglantine's Windows CI uses with MSVC.
+$SccacheTool = @{
+    Version = '0.19.0'
+    Url = 'https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-x86_64-pc-windows-msvc.zip'
+    Sha256 = '28be8c61f6b2c89b9eb2869f6af7f78e6f992e78a8abae0ce855fcc129cbeac1'
+    CacheSize = '10G'
+}
+# Bump when the layout of the reusable build folder changes, so old folders are rebuilt cleanly.
+$BuildCacheVersion = 1
+# Microsoft's Build Tools bootstrapper changes with every update, so it is checked by its
+# Microsoft Authenticode signature instead of a fixed hash.
+$VisualStudioBootstrapperUrl = 'https://aka.ms/vs/17/release/vs_BuildTools.exe'
+$VisualStudioComponents = @(
+    'Microsoft.VisualStudio.Workload.VCTools',
+    'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+    'Microsoft.VisualStudio.Component.VC.CMake.Project'
+)
+
+$script:Language = 'en'
+$script:TotalSteps = 6
 $script:LogPath = $null
 $script:RunRoot = $null
+$script:BuildLock = $null
 $script:Workspace = $null
 $script:RunId = $null
+
+$script:Status = @{ State = 'running'; Step = 0; Title = ''; Hint = ''; Result = '' }
+$script:StatusTail = New-Object 'System.Collections.Generic.Queue[string]'
+$script:StatusWatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+# Rewrites the wizard's status file: key=value lines, "---", then the last log lines. It is
+# throttled because compiler output can be thousands of lines; -Force writes immediately.
+function Write-Status {
+    param([switch]$Force)
+
+    if (-not $StatusPath) { return }
+    if (-not $Force -and $script:StatusWatch.ElapsedMilliseconds -lt 700) { return }
+    $script:StatusWatch.Restart()
+    $clean = { param($value) ([string]$value) -replace '[\r\n]+', ' ' }
+    # Each item is parenthesized: in PowerShell the comma binds tighter than +.
+    $lines = @(
+        ('STATE=' + $script:Status.State),
+        ('PID=' + $PID),
+        ('STEP=' + $script:Status.Step),
+        ('TOTAL=' + $script:TotalSteps),
+        ('TITLE=' + (& $clean $script:Status.Title)),
+        ('HINT=' + (& $clean $script:Status.Hint)),
+        ('RESULT=' + (& $clean $script:Status.Result)),
+        ('LOG=' + (& $clean $script:LogPath)),
+        '---'
+    ) + $script:StatusTail.ToArray()
+    $temporary = $StatusPath + '.tmp'
+    try {
+        [System.IO.File]::WriteAllLines($temporary, [string[]]$lines, (New-Object System.Text.UTF8Encoding($true)))
+        [System.IO.File]::Copy($temporary, $StatusPath, $true)
+    } catch {
+        # The wizard may be reading the file at this moment; the next update catches up.
+    }
+}
+
+function Add-StatusLine {
+    param([string]$Text, [switch]$Force)
+
+    if (-not $StatusPath) { return }
+    $script:StatusTail.Enqueue($Text)
+    while ($script:StatusTail.Count -gt 60) { [void]$script:StatusTail.Dequeue() }
+    Write-Status -Force:$Force
+}
 
 function Write-Log {
     param(
@@ -40,6 +136,7 @@ function Write-Log {
     if ($script:LogPath) {
         Add-Content -LiteralPath $script:LogPath -Value $line -Encoding UTF8
     }
+    Add-StatusLine $line -Force
 }
 
 function Write-JsonFile {
@@ -108,15 +205,25 @@ function Invoke-Tool {
         $previous = Get-Location
         Set-Location -LiteralPath $WorkingDirectory
     }
+    # Windows PowerShell 5.1 turns every stderr line of a native tool into an error record, and
+    # with ErrorActionPreference=Stop the first one (git progress, a Python warning...) would end
+    # the build even though the tool succeeds. Only the exit code decides success.
+    $ErrorActionPreference = 'Continue'
     try {
         & $FilePath @Arguments 2>&1 | ForEach-Object {
-            $text = $_.ToString()
+            if ($_ -is [System.Management.Automation.ErrorRecord]) {
+                $text = $_.Exception.Message
+            } else {
+                $text = $_.ToString()
+            }
             Write-Host $text
             if ($script:LogPath) {
                 Add-Content -LiteralPath $script:LogPath -Value $text -Encoding UTF8
             }
+            Add-StatusLine $text
         }
         $exitCode = $LASTEXITCODE
+        Write-Status -Force
     } finally {
         if ($previous) {
             Set-Location -LiteralPath $previous.Path
@@ -191,7 +298,11 @@ function Get-RepositoryIdentity {
     }
 }
 
-function Get-VisualStudio {
+# Finds a Visual Studio or Build Tools instance with the x64 C++ tools and a recent enough
+# CMake. Returns an object whose Ready is false and Problem explains why when none is usable.
+function Find-VisualStudio {
+    # Native tools may write to stderr; only their exit codes and output decide (see Invoke-Tool).
+    $ErrorActionPreference = 'Continue'
     $candidates = @()
     if (${env:ProgramFiles(x86)}) {
         $candidates += (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe')
@@ -202,33 +313,429 @@ function Get-VisualStudio {
     $vswhere = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
         Select-Object -First 1
     if (-not $vswhere) {
-        throw 'Visual Studio with Desktop development with C++ was not found. Install it, then run the builder again.'
+        return [PSCustomObject]@{ Ready = $false; Problem = 'The Microsoft C++ Build Tools (Visual Studio) are not installed.' }
     }
 
     $vswhereArgs = @(
-        '-latest', '-products', '*', '-requires',
+        '-all', '-sort', '-products', '*', '-requires',
         'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath'
     )
-    $installResult = & $vswhere @vswhereArgs 2>$null | Select-Object -First 1
-    $installPath = [string]$installResult
-    $installPath = $installPath.Trim()
-    if ([string]::IsNullOrWhiteSpace($installPath)) {
-        throw 'Visual Studio is installed, but its x64 C++ tools are missing. Add Desktop development with C++.'
+    $installPaths = @(& $vswhere @vswhereArgs 2>$null | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+    if ($installPaths.Count -eq 0) {
+        return [PSCustomObject]@{ Ready = $false; Problem = 'Visual Studio is installed, but its x64 C++ tools are missing.' }
     }
-    $vcvars = Join-Path $installPath 'VC\Auxiliary\Build\vcvars64.bat'
-    Require-File $vcvars 'Visual Studio x64 environment script' | Out-Null
-    return [PSCustomObject]@{
-        InstallPath = $installPath
-        VcVars = $vcvars
-        CMakeBin = Join-Path $installPath 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin'
-        NinjaBin = Join-Path $installPath 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja'
-        GitBin = Join-Path $installPath 'Common7\IDE\CommonExtensions\Microsoft\TeamFoundation\Team Explorer\Git\cmd'
+
+    $problem = 'Visual Studio is too old: Eglantine needs CMake {0} or newer.' -f $MinimumCmake
+    # -sort lists the newest first, so a freshly installed Build Tools wins over an older Visual Studio.
+    foreach ($installPath in $installPaths) {
+        $vcvars = Join-Path $installPath 'VC\Auxiliary\Build\vcvars64.bat'
+        $cmakeBin = Join-Path $installPath 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin'
+        $cmakeExe = Join-Path $cmakeBin 'cmake.exe'
+        if (-not (Test-Path -LiteralPath $vcvars -PathType Leaf) -or
+            -not (Test-Path -LiteralPath $cmakeExe -PathType Leaf)) {
+            continue
+        }
+        try {
+            if ((Get-CmakeVersion $cmakeExe) -lt $MinimumCmake) { continue }
+        } catch {
+            continue
+        }
+        return [PSCustomObject]@{
+            Ready = $true
+            Problem = ''
+            InstallPath = $installPath
+            VcVars = $vcvars
+            CMakeBin = $cmakeBin
+            NinjaBin = Join-Path $installPath 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja'
+            GitBin = Join-Path $installPath 'Common7\IDE\CommonExtensions\Microsoft\TeamFoundation\Team Explorer\Git\cmd'
+        }
     }
+    return [PSCustomObject]@{ Ready = $false; Problem = $problem }
+}
+
+function Get-Text {
+    param([Parameter(Mandatory = $true)][string]$English, [Parameter(Mandatory = $true)][string]$French)
+    if ($script:Language -eq 'fr') { return $French }
+    return $English
+}
+
+# Shows a clear, numbered step for people who are not reading the technical log.
+function Write-Step {
+    param(
+        [Parameter(Mandatory = $true)][int]$Number,
+        [Parameter(Mandatory = $true)][string]$Title,
+        [string]$Hint = ''
+    )
+
+    $heading = (Get-Text 'Step {0} of {1}: {2}' 'Étape {0} sur {1} : {2}') -f $Number, $script:TotalSteps, $Title
+    Write-Host ''
+    Write-Host ('=' * 72) -ForegroundColor Cyan
+    Write-Host ('  ' + $heading) -ForegroundColor Cyan
+    if ($Hint) {
+        Write-Host ('  ' + $Hint) -ForegroundColor Gray
+    }
+    Write-Host ('=' * 72) -ForegroundColor Cyan
+    try { $Host.UI.RawUI.WindowTitle = 'Eglantine Steam Builder - ' + $heading } catch { }
+    if ($script:LogPath) {
+        Add-Content -LiteralPath $script:LogPath -Value ('### ' + $heading) -Encoding UTF8
+    }
+    $script:Status.Step = $Number
+    $script:Status.Title = $Title
+    $script:Status.Hint = $Hint
+    Add-StatusLine ('### ' + $heading) -Force
+}
+
+# Downloads a file once into the tool cache and refuses it unless its SHA-256 matches.
+function Save-VerifiedDownload {
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [Parameter(Mandatory = $true)][string]$Destination,
+        [string]$Sha256 = '',
+        [Parameter(Mandatory = $true)][string]$Description
+    )
+
+    if ((Test-Path -LiteralPath $Destination -PathType Leaf) -and $Sha256 -and
+        (Get-FileHashString $Destination) -eq $Sha256) {
+        Write-Log "$Description is already downloaded."
+        return $Destination
+    }
+    New-Item -ItemType Directory -Path (Split-Path $Destination -Parent) -Force | Out-Null
+    $partial = $Destination + '.part'
+    Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
+    Write-Log "Downloading $Description from $Url"
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+    $client = New-Object System.Net.WebClient
+    $client.Headers.Add('User-Agent', "Eglantine-Steam-Remote-Play-Builder/$BuilderVersion")
+    try {
+        $client.DownloadFile($Url, $partial)
+    } catch {
+        Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
+        throw "Could not download $Description. Check your internet connection, then run the builder again. ($($_.Exception.Message))"
+    } finally {
+        $client.Dispose()
+    }
+    if ($Sha256) {
+        $actual = Get-FileHashString $partial
+        if ($actual -ne $Sha256) {
+            Remove-Item -LiteralPath $partial -Force -ErrorAction SilentlyContinue
+            throw "The downloaded $Description failed its integrity check (expected $Sha256, got $actual). It was deleted."
+        }
+    }
+    Move-Item -LiteralPath $partial -Destination $Destination -Force
+    return $Destination
+}
+
+# Extracts a zip into a new folder; the folder only appears once extraction succeeded.
+function Expand-ZipToFolder {
+    param(
+        [Parameter(Mandatory = $true)][string]$Zip,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    $staging = $Destination + '.extracting'
+    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    # ExtractToDirectory refuses entries that would land outside the destination folder.
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($Zip, $staging)
+    if (Test-Path -LiteralPath $Destination) {
+        Remove-Item -LiteralPath $Destination -Recurse -Force
+    }
+    Move-Item -LiteralPath $staging -Destination $Destination
+}
+
+function Get-AutoGlslang {
+    param([Parameter(Mandatory = $true)][string]$ToolCache)
+
+    $folder = Join-Path $ToolCache ('glslang-' + $GlslangTool.Version)
+    $exe = Join-Path $folder 'bin\glslang.exe'
+    if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+        $zip = Save-VerifiedDownload $GlslangTool.Url (Join-Path $ToolCache ('downloads\glslang-' + $GlslangTool.Version + '.zip')) `
+            $GlslangTool.Sha256 ('glslang shader compiler ' + $GlslangTool.Version)
+        Expand-ZipToFolder $zip $folder
+    }
+    return Require-File $exe 'glslang shader compiler'
+}
+
+function Get-AutoMinGit {
+    param([Parameter(Mandatory = $true)][string]$ToolCache)
+
+    $folder = Join-Path $ToolCache ('mingit-' + $MinGitTool.Version)
+    $exe = Join-Path $folder 'cmd\git.exe'
+    if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+        $zip = Save-VerifiedDownload $MinGitTool.Url (Join-Path $ToolCache ('downloads\MinGit-' + $MinGitTool.Version + '.zip')) `
+            $MinGitTool.Sha256 ('portable Git ' + $MinGitTool.Version)
+        Expand-ZipToFolder $zip $folder
+    }
+    return Require-File $exe 'portable Git'
+}
+
+function Get-AutoQt {
+    param([Parameter(Mandatory = $true)][string]$ToolCache)
+
+    $qtRoot = Join-Path $ToolCache 'qt'
+    $qtDir = Join-Path $qtRoot ($QtVersion + '\msvc2022_64')
+    $charts = Join-Path $qtDir 'lib\cmake\Qt6Charts\Qt6ChartsConfig.cmake'
+    if (Test-Path -LiteralPath $charts -PathType Leaf) {
+        Write-Log "Qt $QtVersion is already downloaded."
+        return $qtDir
+    }
+    $aqt = Save-VerifiedDownload $AqtTool.Url (Join-Path $ToolCache ('aqtinstall-' + $AqtTool.Version + '\aqt.exe')) `
+        $AqtTool.Sha256 ('Qt downloader (aqtinstall ' + $AqtTool.Version + ')')
+    New-Item -ItemType Directory -Path $qtRoot -Force | Out-Null
+    Write-Log "Downloading Qt $QtVersion with Qt Charts (about 1 GB). aqtinstall checks every Qt archive."
+    Invoke-Tool $aqt @('install-qt', 'windows', 'desktop', $QtVersion, $QtArch, '-m', 'qtcharts',
+                       '--outputdir', $qtRoot) $ToolCache 'aqt'
+    Require-File $charts 'Qt Charts CMake files' | Out-Null
+    return $qtDir
+}
+
+# Finds GNU patch the way Eglantine's CMake does (next to Git for Windows, then on PATH).
+function Find-PatchProgram {
+    param([Parameter(Mandatory = $true)][string]$Git)
+
+    $gitDir = Split-Path -Parent $Git
+    $candidates = @(
+        (Join-Path (Split-Path -Parent $gitDir) 'usr\bin\patch.exe'),
+        (Join-Path (Split-Path -Parent (Split-Path -Parent $gitDir)) 'usr\bin\patch.exe'),
+        (Join-Path ${env:ProgramFiles} 'Git\usr\bin\patch.exe')
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return [System.IO.Path]::GetFullPath($candidate)
+        }
+    }
+    $onPath = Get-Command patch.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($onPath) { return $onPath.Path }
+    return ''
+}
+
+function Get-AutoPatch {
+    param([Parameter(Mandatory = $true)][string]$ToolCache)
+
+    $folder = Join-Path $ToolCache ('git-for-windows-' + $GitForWindowsTool.Version)
+    $exe = Join-Path $folder 'usr\bin\patch.exe'
+    if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+        $archive = Save-VerifiedDownload $GitForWindowsTool.Url `
+            (Join-Path $ToolCache ('downloads\Git-' + $GitForWindowsTool.Version + '-64-bit.tar.bz2')) `
+            $GitForWindowsTool.Sha256 ('Git for Windows tools ' + $GitForWindowsTool.Version + ' (for patch.exe, about 120 MB)')
+        $staging = $folder + '.extracting'
+        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Path $staging -Force | Out-Null
+        $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+        Require-File $tar 'Windows tar tool' | Out-Null
+        Invoke-Tool $tar @('-xjf', $archive, '-C', $staging, 'usr/bin') '' 'tar'
+        if (Test-Path -LiteralPath $folder) {
+            Remove-Item -LiteralPath $folder -Recurse -Force
+        }
+        Move-Item -LiteralPath $staging -Destination $folder
+    }
+    return Require-File $exe 'GNU patch from Git for Windows'
+}
+
+function Get-AutoSccache {
+    param([Parameter(Mandatory = $true)][string]$ToolCache)
+
+    $folder = Join-Path $ToolCache ('sccache-' + $SccacheTool.Version)
+    $exe = Get-ChildItem -LiteralPath $folder -Recurse -Filter 'sccache.exe' -File -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $exe) {
+        $zip = Save-VerifiedDownload $SccacheTool.Url (Join-Path $ToolCache ('downloads\sccache-' + $SccacheTool.Version + '.zip')) `
+            $SccacheTool.Sha256 ('sccache compiler cache ' + $SccacheTool.Version)
+        Expand-ZipToFolder $zip $folder
+        $exe = Get-ChildItem -LiteralPath $folder -Recurse -Filter 'sccache.exe' -File | Select-Object -First 1
+    }
+    if (-not $exe) {
+        throw 'sccache.exe was not found in the downloaded archive.'
+    }
+    return $exe.FullName
+}
+
+# Runs Git and returns its standard output lines; throws when Git fails.
+function Get-GitOutput {
+    param(
+        [Parameter(Mandatory = $true)][string]$Git,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+
+    $ErrorActionPreference = 'Continue'
+    $output = @(& $Git @Arguments 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        throw ('git {0} failed with exit code {1}.' -f ($Arguments -join ' '), $LASTEXITCODE)
+    }
+    return $output
+}
+
+# Keeps one build folder from being used by two builds at the same time. The lock is released
+# when this process ends, even after a crash.
+function Enter-BuildLock {
+    param([Parameter(Mandatory = $true)][string]$Folder)
+
+    $path = Join-Path $Folder 'builder.lock'
+    try {
+        $script:BuildLock = [System.IO.File]::Open($path, [System.IO.FileMode]::OpenOrCreate,
+            [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+    } catch {
+        throw 'Another build is already using this build folder. Wait for it to finish, then try again.'
+    }
+}
+
+# Brings the reusable source folder to <commit> + the Steam patch. The patched version is first
+# assembled inside Git (temporary index, no files written), then checked out: Git only rewrites
+# files whose content changed, so Ninja keeps every object file that is still valid.
+# Returns $true when the patch applied directly, $false when it needed a three-way merge.
+function Update-PatchedSource {
+    param(
+        [Parameter(Mandatory = $true)][string]$Git,
+        [Parameter(Mandatory = $true)][string]$Mirror,
+        [Parameter(Mandatory = $true)][string]$SourceDir,
+        [Parameter(Mandatory = $true)][string]$Commit,
+        [Parameter(Mandatory = $true)][string]$Patch
+    )
+
+    $normalize = { param($value) ([string]$value).Replace('/', '\').TrimEnd('\').ToLowerInvariant() }
+    $usable = $false
+    if (Test-Path -LiteralPath (Join-Path $SourceDir '.git') -PathType Container) {
+        try {
+            $origin = (Get-GitOutput $Git @('-C', $SourceDir, 'config', '--get', 'remote.origin.url')) | Select-Object -First 1
+            $usable = (& $normalize $origin) -eq (& $normalize $Mirror)
+        } catch {
+            $usable = $false
+        }
+    }
+    if (-not $usable) {
+        if (Test-Path -LiteralPath $SourceDir) {
+            Write-Log 'The reusable source folder is not usable; creating it again.' 'WARN'
+            Remove-Item -LiteralPath $SourceDir -Recurse -Force
+        }
+        Invoke-Tool $Git @('clone', '--shared', '--no-checkout', $Mirror, $SourceDir) '' 'git clone worktree'
+    }
+
+    $index = Join-Path $SourceDir '.git\builder-patch.index'
+    Remove-Item -LiteralPath $index -Force -ErrorAction SilentlyContinue
+    $direct = $true
+    $env:GIT_INDEX_FILE = $index
+    try {
+        Invoke-Tool $Git @('-C', $SourceDir, 'read-tree', $Commit) '' 'git read-tree'
+        try {
+            Invoke-Tool $Git @('-C', $SourceDir, 'apply', '--cached', '--check', '--whitespace=nowarn', $Patch) '' 'git apply check'
+        } catch {
+            $direct = $false
+            Write-Log 'The patch needs Git three-way merge help for this version.' 'WARN'
+        }
+        $applyArguments = @('-C', $SourceDir, 'apply', '--cached', '--whitespace=nowarn')
+        if (-not $direct) { $applyArguments += '--3way' }
+        try {
+            Invoke-Tool $Git ($applyArguments + $Patch) '' 'git apply'
+        } catch {
+            $conflicts = @()
+            try {
+                $conflicts = @(Get-GitOutput $Git @('-C', $SourceDir, 'diff', '--cached', '--name-only', '--diff-filter=U'))
+            } catch { }
+            if ($conflicts.Count -gt 0) {
+                throw "The patch conflicts with this source version in: $($conflicts -join ', '). This fork/version needs an updated patch."
+            }
+            throw 'The patch did not apply to this source version. This fork/version needs an updated patch.'
+        }
+        $tree = (Get-GitOutput $Git @('-C', $SourceDir, 'write-tree')) | Select-Object -First 1
+    } finally {
+        Remove-Item Env:\GIT_INDEX_FILE -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $index -Force -ErrorAction SilentlyContinue
+    }
+
+    $patched = (Get-GitOutput $Git @('-C', $SourceDir,
+        '-c', 'user.name=Eglantine Steam Builder', '-c', 'user.email=builder@localhost',
+        'commit-tree', $tree, '-p', $Commit, '-m', 'Steam Remote Play Together patch (local build)')) |
+        Select-Object -First 1
+    Invoke-Tool $Git @('-C', $SourceDir, 'checkout', '--force', '--detach', $patched) '' 'git checkout'
+    return $direct
+}
+
+function Install-VisualStudioBuildTools {
+    param([Parameter(Mandatory = $true)][string]$ToolCache)
+
+    $bootstrapper = Join-Path $ToolCache 'downloads\vs_BuildTools.exe'
+    Remove-Item -LiteralPath $bootstrapper -Force -ErrorAction SilentlyContinue
+    Save-VerifiedDownload $VisualStudioBootstrapperUrl $bootstrapper '' 'Microsoft C++ Build Tools installer' | Out-Null
+    $signature = Get-AuthenticodeSignature -LiteralPath $bootstrapper
+    if ($signature.Status -ne 'Valid' -or -not $signature.SignerCertificate -or
+        $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+        Remove-Item -LiteralPath $bootstrapper -Force -ErrorAction SilentlyContinue
+        throw 'The downloaded Visual Studio installer is not signed by Microsoft. It was deleted.'
+    }
+
+    $arguments = @('--wait', '--passive', '--norestart', '--nocache')
+    foreach ($component in $VisualStudioComponents) { $arguments += @('--add', $component) }
+    $arguments += '--includeRecommended'
+
+    Write-Log (Get-Text `
+        'Installing the Microsoft C++ Build Tools (about 8 GB, 10-30 minutes). Windows will ask for administrator approval: choose Yes.' `
+        'Installation des outils Microsoft C++ Build Tools (environ 8 Go, 10 à 30 minutes). Windows va demander une autorisation administrateur : choisissez Oui.') 'WARN'
+    Write-Log ('Running: vs_BuildTools.exe ' + ($arguments -join ' '))
+    try {
+        $process = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Verb RunAs -Wait -PassThru
+    } catch {
+        throw 'The Microsoft C++ Build Tools were not installed because administrator approval was refused. Run the builder again and choose Yes.'
+    }
+    $code = $process.ExitCode
+    if ($code -eq 3010 -or $code -eq 1641) {
+        Write-Log 'The Build Tools were installed. Windows asks for a restart; the build continues now, but restart if it fails.' 'WARN'
+    } elseif ($code -ne 0) {
+        throw "The Microsoft C++ Build Tools installer stopped with code $code. Run the builder again, or install 'Desktop development with C++' from https://visualstudio.microsoft.com/downloads/"
+    }
+}
+
+# Accepts the "sdk" folder, the unzipped folder around it, or the SDK zip as downloaded.
+function Resolve-SteamworksSdk {
+    param(
+        [Parameter(Mandatory = $true)][string]$InputPath,
+        [Parameter(Mandatory = $true)][string]$CacheRoot
+    )
+
+    if ([string]::IsNullOrWhiteSpace($InputPath)) {
+        throw 'The Steamworks SDK was not selected. Run the wizard again.'
+    }
+    $sdk = $InputPath
+    if (Test-Path -LiteralPath $InputPath -PathType Leaf) {
+        if ($InputPath -notmatch '\.zip$') {
+            throw "The Steamworks SDK must be the downloaded .zip file or the folder named sdk: $InputPath"
+        }
+        $zipHash = Get-FileHashString $InputPath
+        $extracted = Join-Path $CacheRoot ('steamworks\' + $zipHash.Substring(0, 16))
+        if (-not (Test-Path -LiteralPath $extracted -PathType Container)) {
+            Write-Log "Unzipping the Steamworks SDK into the private build cache."
+            Expand-ZipToFolder $InputPath $extracted
+        }
+        $header = Get-ChildItem -LiteralPath $extracted -Recurse -Filter 'isteamremoteplay.h' -File |
+            Where-Object { $_.Directory.Name -eq 'steam' -and $_.Directory.Parent.Name -eq 'public' } |
+            Sort-Object { $_.FullName.Length } | Select-Object -First 1
+        if (-not $header) {
+            throw 'This zip is not the Steamworks SDK. Download steamworks_sdk_XXX.zip from Valve again.'
+        }
+        $sdk = $header.Directory.Parent.Parent.FullName
+    } else {
+        $sdk = Require-Directory $InputPath 'Steamworks SDK folder'
+        if (-not (Test-Path -LiteralPath (Join-Path $sdk 'public\steam') -PathType Container) -and
+            (Test-Path -LiteralPath (Join-Path $sdk 'sdk\public\steam') -PathType Container)) {
+            $sdk = Join-Path $sdk 'sdk'
+        }
+    }
+
+    Require-File (Join-Path $sdk 'public\steam\steam_api.h') 'Steamworks SDK header' | Out-Null
+    $remotePlayHeader = Join-Path $sdk 'public\steam\isteamremoteplay.h'
+    Require-File $remotePlayHeader 'Steamworks Remote Play header' | Out-Null
+    Require-File (Join-Path $sdk 'redistributable_bin\win64\steam_api64.lib') 'Steamworks x64 import library' | Out-Null
+    Require-File (Join-Path $sdk 'redistributable_bin\win64\steam_api64.dll') 'Steamworks x64 runtime library' | Out-Null
+    if (-not (Select-String -LiteralPath $remotePlayHeader -SimpleMatch 'BEnableRemotePlayTogetherDirectInput' -Quiet)) {
+        throw 'The Steamworks SDK is too old. Download SDK 1.62 or newer from Valve.'
+    }
+    return [System.IO.Path]::GetFullPath($sdk)
 }
 
 function Import-VcVars {
     param([Parameter(Mandatory = $true)][string]$VcVars)
 
+    # Native tools may write to stderr; only their exit codes and output decide (see Invoke-Tool).
+    $ErrorActionPreference = 'Continue'
     $commandLine = 'call "{0}" >nul && set' -f $VcVars
     $lines = & $env:ComSpec '/d' '/s' '/c' $commandLine 2>&1
     if ($LASTEXITCODE -ne 0) {
@@ -251,7 +758,9 @@ function Import-VcVars {
 function Get-CmakeVersion {
     param([Parameter(Mandatory = $true)][string]$Cmake)
 
-    $line = (& $Cmake '--version' 2>&1 | Select-Object -First 1).ToString()
+    # Native tools may write to stderr; only their exit codes and output decide (see Invoke-Tool).
+    $ErrorActionPreference = 'Continue'
+    $line = (@(& $Cmake '--version' 2>&1) | Select-Object -First 1).ToString()
     if ($LASTEXITCODE -ne 0 -or $line -notmatch '(\d+\.\d+\.\d+)') {
         throw 'Could not read the CMake version.'
     }
@@ -262,17 +771,28 @@ function Get-ResolvedCommit {
     param(
         [Parameter(Mandatory = $true)][string]$Git,
         [Parameter(Mandatory = $true)][string]$Mirror,
-        [Parameter(Mandatory = $true)][string]$Ref
+        [Parameter(Mandatory = $true)][string]$Ref,
+        [string]$Kind = ''
     )
+    # Native tools may write to stderr; only their exit codes and output decide (see Invoke-Tool).
+    $ErrorActionPreference = 'Continue'
 
-    $candidates = @(
-        ('refs/tags/{0}^{{commit}}' -f $Ref),
-        ('refs/heads/{0}^{{commit}}' -f $Ref),
-        ('refs/remotes/origin/{0}^{{commit}}' -f $Ref),
-        ('{0}^{{commit}}' -f $Ref)
-    )
+    # The wizard says whether the name is a branch or a tag, so a branch and a tag with the same
+    # name cannot be confused. Older configurations without a kind keep the previous lookup.
+    if ($Kind -eq 'branch') {
+        $candidates = @(('refs/heads/{0}^{{commit}}' -f $Ref))
+    } elseif ($Kind -eq 'tag') {
+        $candidates = @(('refs/tags/{0}^{{commit}}' -f $Ref))
+    } else {
+        $candidates = @(
+            ('refs/tags/{0}^{{commit}}' -f $Ref),
+            ('refs/heads/{0}^{{commit}}' -f $Ref),
+            ('refs/remotes/origin/{0}^{{commit}}' -f $Ref),
+            ('{0}^{{commit}}' -f $Ref)
+        )
+    }
     foreach ($candidate in $candidates) {
-        $value = (& $Git ("--git-dir=$Mirror") 'rev-parse' '--verify' '--quiet' $candidate 2>$null |
+        $value = (@(& $Git ("--git-dir=$Mirror") 'rev-parse' '--verify' '--quiet' $candidate 2>$null) |
             Select-Object -First 1)
         if ($LASTEXITCODE -eq 0 -and $value -match '^[0-9a-fA-F]{40}$') {
             return $value.ToLowerInvariant()
@@ -338,6 +858,7 @@ Build manifest: build-manifest.json
 }
 
 $exitCode = 1
+Write-Status -Force
 try {
     $ConfigPath = Require-File $ConfigPath 'builder configuration file'
     $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -353,29 +874,35 @@ try {
     if (-not (Test-SafeGitRef $gitRef)) {
         throw "'$gitRef' is not a supported branch or tag name."
     }
+    $gitRefKind = ''
+    if ($config.PSObject.Properties.Name.Contains('GitRefKind')) {
+        $gitRefKind = ([string]$config.GitRefKind).Trim()
+    }
+    if ($gitRefKind -notin @('', 'branch', 'tag')) {
+        throw "'$gitRefKind' is not a supported reference kind. Run the wizard again."
+    }
 
     $appId = 0
     if (-not [UInt32]::TryParse(([string]$config.SteamAppId), [ref]$appId) -or $appId -eq 0) {
         throw 'Steam App ID must be a positive whole number.'
     }
 
-    $steamSdk = Require-Directory ([string]$config.SteamworksSdk) 'Steamworks SDK sdk folder'
-    $qtDir = Require-Directory ([string]$config.QtDir) 'Qt MSVC folder'
-    $vulkanSdk = Require-Directory ([string]$config.VulkanSdk) 'Vulkan SDK folder'
-
-    Require-File (Join-Path $steamSdk 'public\steam\steam_api.h') 'Steamworks SDK header' | Out-Null
-    $remotePlayHeader = Join-Path $steamSdk 'public\steam\isteamremoteplay.h'
-    Require-File $remotePlayHeader 'Steamworks Remote Play header' | Out-Null
-    Require-File (Join-Path $steamSdk 'redistributable_bin\win64\steam_api64.lib') 'Steamworks x64 import library' | Out-Null
-    Require-File (Join-Path $steamSdk 'redistributable_bin\win64\steam_api64.dll') 'Steamworks x64 runtime library' | Out-Null
-    $hasRemotePlayInput = Select-String -LiteralPath $remotePlayHeader -SimpleMatch 'BEnableRemotePlayTogetherDirectInput' -Quiet
-    if (-not $hasRemotePlayInput) {
-        throw 'The Steamworks SDK is too old. Install SDK 1.62 or newer.'
+    # Empty Qt / Vulkan folders mean "download what is needed"; InstallMissing allows installing the
+    # Microsoft C++ Build Tools. Configurations from builder 1.1 always name both folders.
+    $steamInput = ([string]$config.SteamworksSdk).Trim()
+    $qtInput = ([string]$config.QtDir).Trim()
+    $vulkanInput = ([string]$config.VulkanSdk).Trim()
+    $installMissing = $false
+    if ($config.PSObject.Properties.Name.Contains('InstallMissing')) {
+        $installMissing = ([string]$config.InstallMissing) -eq 'True'
     }
-    Require-File (Join-Path $qtDir 'lib\cmake\Qt6\Qt6Config.cmake') 'Qt 6 CMake files' | Out-Null
-    Require-File (Join-Path $qtDir 'lib\cmake\Qt6Charts\Qt6ChartsConfig.cmake') 'Qt Charts CMake files' | Out-Null
-    $windeployqt = Require-File (Join-Path $qtDir 'bin\windeployqt.exe') 'Qt deployment tool'
-    $glslang = Require-File (Join-Path $vulkanSdk 'Bin\glslangValidator.exe') 'Vulkan SDK shader tool'
+    $useCompilerCache = $true
+    if ($config.PSObject.Properties.Name.Contains('UseCompilerCache')) {
+        $useCompilerCache = ([string]$config.UseCompilerCache).Trim().ToLowerInvariant() -ne 'false'
+    }
+    if ($config.PSObject.Properties.Name.Contains('Language') -and ([string]$config.Language) -eq 'fr') {
+        $script:Language = 'fr'
+    }
 
     $workspaceInput = ([string]$config.Workspace).Trim()
     if ([string]::IsNullOrWhiteSpace($workspaceInput)) {
@@ -397,17 +924,25 @@ try {
     if ([string]::IsNullOrWhiteSpace($safeRef)) { $safeRef = 'ref' }
     $repoKey = ('{0}-{1}' -f $repository.Repository, (Get-StringHash $repository.CloneUrl).Substring(0, 12)).ToLowerInvariant()
     $script:RunId = '{0}-{1}-{2}' -f $repository.Repository, $safeRef, $timestamp
-    $script:RunRoot = Join-Path $workspace ('runs\' + $script:RunId)
+    # One reusable source + build folder per repository, so a later build only recompiles what
+    # changed. The path stays short on purpose (no branch name): long paths pushed CMake's object
+    # files past its 250-character limit. The log file keeps the descriptive run name.
+    $script:RunRoot = Join-Path $workspace ('work\' + $repoKey)
     $logsDir = Join-Path $workspace 'logs'
     New-Item -ItemType Directory -Path $script:RunRoot, $logsDir -Force | Out-Null
     $script:LogPath = Join-Path $logsDir ($script:RunId + '.log')
     New-Item -ItemType File -Path $script:LogPath -Force | Out-Null
+    Enter-BuildLock $script:RunRoot
 
     Write-Log "Eglantine Steam Remote Play Builder $BuilderVersion"
     Write-Log "Repository: $($repository.CloneUrl)"
-    Write-Log "Reference: $gitRef"
+    Write-Log ("Reference: $gitRef" + $(if ($gitRefKind) { " ($gitRefKind)" } else { "" }))
     Write-Log "Workspace: $workspace"
     Write-Log 'Only build source you trust. CMake and the chosen repository can run build commands on this PC.' 'WARN'
+    $oldRuns = Join-Path $workspace 'runs'
+    if (Test-Path -LiteralPath $oldRuns -PathType Container) {
+        Write-Log "Builds from older builder versions in $oldRuns are no longer used. You can delete that folder to free space." 'WARN'
+    }
 
     $patch = Require-File (Join-Path $PSScriptRoot 'steam-remote-play-together.patch') 'Steam Remote Play source patch'
     $patchHash = Get-FileHashString $patch
@@ -416,8 +951,63 @@ try {
     }
     Write-Log "Patch SHA-256: $patchHash"
 
-    $visualStudio = Get-VisualStudio
+    Write-Step 1 (Get-Text 'Preparing the build tools' 'Préparation des outils de compilation') (Get-Text `
+        'The first time, this downloads what is missing (up to 10 GB) and can take 30 minutes.' `
+        'La première fois, les éléments manquants sont téléchargés (jusqu''à 10 Go) : cela peut prendre 30 minutes.')
+    $cacheRoot = Join-Path $workspace 'cache'
+    $toolCache = Join-Path $cacheRoot 'tools'
+    New-Item -ItemType Directory -Path $toolCache -Force | Out-Null
+
+    $visualStudio = Find-VisualStudio
+    if (-not $visualStudio.Ready) {
+        if (-not $installMissing) {
+            throw ($visualStudio.Problem + ' Run the wizard again and let it install what is missing, or install "Desktop development with C++" from https://visualstudio.microsoft.com/downloads/')
+        }
+        Write-Log $visualStudio.Problem 'WARN'
+        Install-VisualStudioBuildTools $toolCache
+        $visualStudio = Find-VisualStudio
+        if (-not $visualStudio.Ready) {
+            throw ('The Microsoft C++ Build Tools were installed but are not usable yet: ' + $visualStudio.Problem + ' Restart Windows, then run the builder again.')
+        }
+    }
     Write-Log "Visual Studio: $($visualStudio.InstallPath)"
+
+    $steamSdk = Resolve-SteamworksSdk $steamInput $cacheRoot
+    Write-Log "Steamworks SDK: $steamSdk"
+
+    if ($qtInput) {
+        $qtDir = Require-Directory $qtInput 'Qt MSVC folder'
+    } else {
+        $qtDir = Get-AutoQt $toolCache
+    }
+    Require-File (Join-Path $qtDir 'lib\cmake\Qt6\Qt6Config.cmake') 'Qt 6 CMake files' | Out-Null
+    Require-File (Join-Path $qtDir 'lib\cmake\Qt6Charts\Qt6ChartsConfig.cmake') 'Qt Charts CMake files' | Out-Null
+    $windeployqt = Require-File (Join-Path $qtDir 'bin\windeployqt.exe') 'Qt deployment tool'
+    Write-Log "Qt: $qtDir"
+
+    $vulkanSdk = ''
+    if ($vulkanInput) {
+        $vulkanSdk = Require-Directory $vulkanInput 'Vulkan SDK folder'
+        $glslang = Require-File (Join-Path $vulkanSdk 'Bin\glslangValidator.exe') 'Vulkan SDK shader tool'
+    } else {
+        $glslang = Get-AutoGlslang $toolCache
+    }
+    Write-Log "Shader compiler: $glslang"
+
+    # This project prefers a reusable workspace cache over an aggressive compiler cache. The build
+    # continues without sccache when it is disabled or fails to prepare.
+    $sccache = ''
+    if ($useCompilerCache) {
+        try {
+            $sccache = Get-AutoSccache $toolCache
+            Write-Log "Compiler cache: $sccache"
+        } catch {
+            Write-Log ('The compiler cache could not be prepared, so this build runs without it: ' + $_.Exception.Message) 'WARN'
+        }
+    } else {
+        Write-Log 'Compiler cache disabled by configuration; using the reusable workspace cache instead.'
+    }
+
     $toolPaths = @($visualStudio.CMakeBin, $visualStudio.NinjaBin, $visualStudio.GitBin, (Join-Path $qtDir 'bin')) |
         Where-Object { Test-Path -LiteralPath $_ -PathType Container }
     $pathSeparator = [System.IO.Path]::PathSeparator
@@ -425,9 +1015,13 @@ try {
     Import-VcVars $visualStudio.VcVars
     $env:Path = (($toolPaths -join $pathSeparator) + $pathSeparator + $env:Path)
 
-    $git = Resolve-Tool 'git.exe' @(
-        (Join-Path $visualStudio.GitBin 'git.exe')
-    )
+    try {
+        $git = Resolve-Tool 'git.exe' @(
+            (Join-Path $visualStudio.GitBin 'git.exe')
+        )
+    } catch {
+        $git = Get-AutoMinGit $toolCache
+    }
     $cmake = Resolve-Tool 'cmake.exe' @(
         (Join-Path $visualStudio.CMakeBin 'cmake.exe')
     )
@@ -435,20 +1029,31 @@ try {
         (Join-Path $visualStudio.NinjaBin 'ninja.exe')
     )
     $cmakeVersion = Get-CmakeVersion $cmake
-    if ($cmakeVersion -lt [Version]'3.31.0') {
-        throw "CMake $cmakeVersion is too old. Eglantine needs CMake 3.31 or newer."
+    if ($cmakeVersion -lt $MinimumCmake) {
+        throw "CMake $cmakeVersion is too old. Eglantine needs CMake $MinimumCmake or newer."
     }
+    $patchProgram = Find-PatchProgram $git
+    if (-not $patchProgram) {
+        Write-Log 'No GNU patch program was found (it comes with the full Git for Windows); downloading it.'
+        $patchProgram = Get-AutoPatch $toolCache
+    }
+    Write-Log "Patch program: $patchProgram"
     Write-Log "Git: $((& $git '--version' | Select-Object -First 1).ToString())"
     Write-Log "CMake: $cmakeVersion"
     Write-Log "Ninja: $((& $ninja '--version' | Select-Object -First 1).ToString())"
 
-    $cacheRoot = Join-Path $workspace 'cache'
+    Write-Step 2 (Get-Text 'Downloading the Eglantine source code' 'Téléchargement du code source d''Eglantine') (Get-Text `
+        'Only the first download is long; later builds reuse it.' `
+        'Seul le premier téléchargement est long ; les compilations suivantes le réutilisent.')
     $mirror = Join-Path $cacheRoot ('repositories\' + $repoKey + '.git')
     $cpmCache = Join-Path $cacheRoot 'cpm'
     New-Item -ItemType Directory -Path (Split-Path $mirror -Parent), $cpmCache -Force | Out-Null
     if (Test-Path -LiteralPath $mirror -PathType Container) {
-        $bare = (& $git ("--git-dir=$mirror") 'rev-parse' '--is-bare-repository' 2>$null | Select-Object -First 1)
-        if ($LASTEXITCODE -ne 0 -or $bare -ne 'true') {
+        $ErrorActionPreference = 'Continue'
+        $bare = (@(& $git ("--git-dir=$mirror") 'rev-parse' '--is-bare-repository' 2>$null) | Select-Object -First 1)
+        $bareExit = $LASTEXITCODE
+        $ErrorActionPreference = 'Stop'
+        if ($bareExit -ne 0 -or $bare -ne 'true') {
             throw "Builder cache path exists but is not its expected Git mirror: $mirror"
         }
         Invoke-Tool $git @("--git-dir=$mirror", 'fetch', '--prune', '--tags', 'origin') '' 'git fetch'
@@ -456,31 +1061,15 @@ try {
         Invoke-Tool $git @('clone', '--mirror', $repository.CloneUrl, $mirror) '' 'git clone'
     }
 
-    $commit = Get-ResolvedCommit $git $mirror $gitRef
+    $commit = Get-ResolvedCommit $git $mirror $gitRef $gitRefKind
     $shortCommit = $commit.Substring(0, 12)
     Write-Log "Resolved $gitRef to $commit"
 
     $sourceDir = Join-Path $script:RunRoot 'source'
     $buildDir = Join-Path $script:RunRoot 'build'
-    Invoke-Tool $git @('clone', '--shared', '--no-checkout', $mirror, $sourceDir) '' 'git clone worktree'
-    Invoke-Tool $git @('-C', $sourceDir, 'checkout', '--detach', $commit) '' 'git checkout'
 
-    $directPatch = $true
-    try {
-        Invoke-Tool $git @('-C', $sourceDir, 'apply', '--check', '--whitespace=nowarn', $patch) '' 'git apply check'
-    } catch {
-        $directPatch = $false
-        Write-Log 'The patch needs Git three-way merge help for this version.' 'WARN'
-    }
-    try {
-        Invoke-Tool $git @('-C', $sourceDir, 'apply', '--3way', '--whitespace=nowarn', $patch) '' 'git apply'
-    } catch {
-        $conflicts = (& $git -C $sourceDir 'diff' '--name-only' '--diff-filter=U' 2>$null) -join ', '
-        if ($conflicts) {
-            throw "The patch conflicts with this source version in: $conflicts. This fork/version needs an updated patch."
-        }
-        throw 'The patch did not apply to this source version. This fork/version needs an updated patch.'
-    }
+    Write-Step 3 (Get-Text 'Adding Steam Remote Play Together' 'Ajout de Steam Remote Play Together')
+    $directPatch = Update-PatchedSource $git $mirror $sourceDir $commit $patch
     foreach ($requiredPath in @(
         'CMakeModules\find\FindSteamworks.cmake',
         'src\input_common\drivers\remote_play_keyboard.cpp',
@@ -517,10 +1106,77 @@ try {
         '-DENABLE_STEAM_REMOTE_PLAY=ON',
         "-DSTEAMWORKS_SDK_DIR=$steamCmakePath",
         "-DSTEAM_REMOTE_PLAY_APPID=$appId",
-        "-DGLSLANGVALIDATOR=$glslangCmakePath"
+        "-DGLSLANGVALIDATOR=$glslangCmakePath",
+        # Eglantine's CPMUtil skips its own search when PATCH_EXE is already set.
+        ("-DPATCH_EXE=" + $patchProgram.Replace('\', '/'))
     )
-    Invoke-Tool $cmake $cmakeArgs '' 'cmake configure'
-    Invoke-Tool $cmake @('--build', $buildDir, '--target', 'yuzu', '--parallel') '' 'cmake build'
+    if ($sccache) {
+        $sccacheCmakePath = $sccache.Replace('\', '/')
+        $cmakeArgs += @("-DCMAKE_C_COMPILER_LAUNCHER=$sccacheCmakePath", "-DCMAKE_CXX_COMPILER_LAUNCHER=$sccacheCmakePath")
+        $env:SCCACHE_DIR = Join-Path $cacheRoot 'sccache'
+        $env:SCCACHE_CACHE_SIZE = $SccacheTool.CacheSize
+    }
+
+    Write-Step 4 (Get-Text 'Preparing the build' 'Préparation de la compilation') (Get-Text `
+        'The first time, Eglantine downloads its libraries here.' `
+        'La première fois, Eglantine télécharge ici ses bibliothèques.')
+    # The previous build folder is reused unless a tool or folder it was configured with changed;
+    # mixing those would give a broken build, so a change means a clean build folder.
+    $fingerprint = (@(
+        "cache-version=$BuildCacheVersion",
+        'generator=Ninja',
+        "visual-studio=$($visualStudio.InstallPath)",
+        "msvc=$env:VCToolsVersion",
+        "cmake=$cmakeVersion",
+        "qt=$qtDir",
+        "glslang=$glslang",
+        "steamworks=$steamSdk",
+        "sccache=$sccache"
+    ) -join "`n")
+    $fingerprintPath = Join-Path $buildDir 'builder-fingerprint.txt'
+    $reusedBuild = $false
+    if (Test-Path -LiteralPath $buildDir -PathType Container) {
+        $previousFingerprint = ''
+        if (Test-Path -LiteralPath $fingerprintPath -PathType Leaf) {
+            $previousFingerprint = ([string](Get-Content -LiteralPath $fingerprintPath -Raw)).Trim()
+        }
+        if ($previousFingerprint -eq $fingerprint.Trim()) {
+            $reusedBuild = $true
+            Write-Log 'Reusing the previous build: only files that changed are compiled again.'
+        } else {
+            Write-Log 'The build tools or folders changed since the last build, so this is a clean build.' 'WARN'
+            Remove-Item -LiteralPath $buildDir -Recurse -Force
+        }
+    }
+    try {
+        Invoke-Tool $cmake $cmakeArgs '' 'cmake configure'
+    } catch {
+        if (-not $reusedBuild) { throw }
+        Write-Log 'Preparing the reused build failed; trying once more with a clean build folder.' 'WARN'
+        Remove-Item -LiteralPath $buildDir -Recurse -Force
+        $reusedBuild = $false
+        Invoke-Tool $cmake $cmakeArgs '' 'cmake configure'
+    }
+    # Written before compiling, so a build that stops halfway is continued next time.
+    [System.IO.File]::WriteAllText($fingerprintPath, $fingerprint)
+
+    $buildHint = if ($reusedBuild) {
+        Get-Text 'Only files that changed since the last build are compiled.' `
+            'Seuls les fichiers modifiés depuis la dernière compilation sont recompilés.'
+    } else {
+        Get-Text 'This is the longest step (often 20 to 60 minutes). Later builds reuse this work.' `
+            'C''est l''étape la plus longue (souvent 20 à 60 minutes). Les compilations suivantes réutilisent ce travail.'
+    }
+    Write-Step 5 (Get-Text 'Building Eglantine' 'Compilation d''Eglantine') $buildHint
+    try {
+        Invoke-Tool $cmake @('--build', $buildDir, '--target', 'yuzu', '--parallel') '' 'cmake build'
+    } finally {
+        if ($sccache) {
+            try { Invoke-Tool $sccache @('--show-stats') '' 'sccache' } catch { }
+            try { Invoke-Tool $sccache @('--stop-server') '' 'sccache' } catch { }
+        }
+    }
+    Write-Step 6 (Get-Text 'Creating your private build folder' 'Création de votre dossier de compilation privé')
 
     $builtExe = Require-File (Join-Path $buildDir 'bin\eglantine.exe') 'built eglantine.exe'
     $builtSteam = Require-File (Join-Path $buildDir 'bin\steam_api64.dll') 'built steam_api64.dll'
@@ -563,6 +1219,8 @@ try {
             appId = $appId
             qtDir = $qtDir
             vulkanSdk = $vulkanSdk
+            shaderCompiler = $glslang
+            steamworksSdk = $steamSdk
             visualStudio = $visualStudio.InstallPath
             cmakeVersion = $cmakeVersion.ToString()
         }
@@ -583,6 +1241,17 @@ try {
     Write-Log "Private build folder: $bundleDir"
     Write-Log "Private build zip:    $zipPath"
     Write-Log 'Do not share or publish this build: it contains Valve''s steam_api64.dll.' 'WARN'
+    Write-Host ''
+    Write-Host (Get-Text `
+        'Done! Start Steam, then open eglantine.exe in the folder above. The folder opens now.' `
+        'Terminé ! Démarrez Steam, puis ouvrez eglantine.exe dans le dossier ci-dessus. Le dossier s''ouvre maintenant.') -ForegroundColor Green
+    if (-not $StatusPath) {
+        # The wizard shows an "Open the build folder" button instead.
+        try { Start-Process -FilePath 'explorer.exe' -ArgumentList @($bundleDir) } catch { }
+    }
+    $script:Status.State = 'done'
+    $script:Status.Result = $bundleDir
+    Write-Status -Force
     $exitCode = 0
 } catch {
     $message = $_.Exception.Message
@@ -591,6 +1260,9 @@ try {
     } else {
         Write-Host ('[ERROR] ' + $message) -ForegroundColor Red
     }
+    $script:Status.State = 'failed'
+    $script:Status.Result = $message
+    Write-Status -Force
     if ($script:Workspace) {
         try {
             $failure = [ordered]@{
@@ -609,7 +1281,10 @@ try {
         }
     }
     Write-Host ''
-    Write-Host 'BUILD FAILED. Read the last messages above.' -ForegroundColor Red
+    Write-Host (Get-Text 'BUILD FAILED. The red message above says what to fix.' `
+        'ÉCHEC DE LA COMPILATION. Le message en rouge ci-dessus indique quoi corriger.') -ForegroundColor Red
+    Write-Host (Get-Text 'After fixing it, run the builder again: downloads already done are kept.' `
+        'Après correction, relancez l''outil : les téléchargements déjà faits sont conservés.')
     if ($script:LogPath) {
         Write-Host ('Log: ' + $script:LogPath)
     }

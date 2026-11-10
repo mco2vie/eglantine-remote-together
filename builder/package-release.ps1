@@ -2,11 +2,21 @@
 # Eglantine builds.
 [CmdletBinding()]
 param(
-    [string]$IsccPath = "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe"
+    [string]$IsccPath = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if (-not $IsccPath) {
+    # winget installs Inno Setup per user; the classic installer uses Program Files.
+    $IsccPath = @(
+        "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+        "$env:ProgramFiles\Inno Setup 7\ISCC.exe",
+        "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe"
+    ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if (-not $IsccPath) { $IsccPath = "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe" }
+}
 
 $builderRoot = $PSScriptRoot
 $installerSource = Join-Path $builderRoot 'eglantine-steam-builder.iss'
@@ -23,6 +33,19 @@ if (-not (Test-Path -LiteralPath $installerSource -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $releaseReadme -PathType Leaf)) {
     throw "Missing release README: $releaseReadme"
+}
+
+# The builder refuses a patch whose SHA-256 differs from the one in Build-SteamRemotePlay.ps1, so
+# never package one that would fail (for example after Git converted its line endings).
+$patchPath = Join-Path $builderRoot 'payload\steam-remote-play-together.patch'
+$buildScript = Get-Content -LiteralPath (Join-Path $builderRoot 'payload\Build-SteamRemotePlay.ps1') -Raw
+if ($buildScript -notmatch "\`$ExpectedPatchSha256 = '([0-9a-f]{64})'") {
+    throw 'Could not read the expected patch SHA-256 from Build-SteamRemotePlay.ps1.'
+}
+$expectedPatch = $Matches[1]
+$actualPatch = (Get-FileHash -LiteralPath $patchPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actualPatch -ne $expectedPatch) {
+    throw "The patch SHA-256 is $actualPatch but the builder expects $expectedPatch. If only line endings changed, delete the patch and run: git checkout -- builder/payload/steam-remote-play-together.patch"
 }
 
 & $IsccPath '/Qp' $installerSource

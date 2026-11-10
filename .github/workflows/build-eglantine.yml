@@ -1,0 +1,150 @@
+name: Build patched Eglantine
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      repository_url:
+        description: 'Public Eglantine repo or fork URL (for example https://github.com/Eglantine-Community/Eglantine.git)'
+        required: true
+        default: 'https://github.com/Eglantine-Community/Eglantine.git'
+      git_ref:
+        description: 'Branch or tag to build'
+        required: true
+        default: 'main'
+      steam_app_id:
+        description: 'Steam App ID to bake into the build. It must belong to you or be explicitly authorized.'
+        required: true
+        default: '480'
+      steamworks_sdk_url:
+        description: 'URL to the Valve Steamworks SDK zip to use for the build.'
+        required: true
+        default: ''
+      create_release:
+        description: 'Upload the build as a GitHub Release instead of an artifact only.'
+        type: boolean
+        required: false
+        default: false
+      release_name:
+        description: 'Optional release title. Defaults to a generated value.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build-eglantine:
+    runs-on: windows-2022
+    timeout-minutes: 240
+    defaults:
+      run:
+        shell: powershell
+    env:
+      REPOSITORY_URL: ${{ github.event.inputs.repository_url || vars.EGLANTINE_BUILD_REPO_URL || 'https://github.com/Eglantine-Community/Eglantine.git' }}
+      GIT_REF: ${{ github.event.inputs.git_ref || vars.EGLANTINE_BUILD_REF || 'main' }}
+      STEAM_APP_ID: ${{ github.event.inputs.steam_app_id || vars.STEAM_APP_ID || '480' }}
+      STEAMWORKS_SDK_URL: ${{ github.event.inputs.steamworks_sdk_url || vars.STEAMWORKS_SDK_URL || '' }}
+      CREATE_RELEASE: ${{ github.event_name == 'push' || github.event.inputs.create_release == 'true' }}
+      RELEASE_NAME: ${{ github.event.inputs.release_name || vars.EGLANTINE_BUILD_RELEASE_NAME || format('Eglantine Remote Play {0}', github.run_number) }}
+    steps:
+      - name: Check out builder repo
+        uses: actions/checkout@v4
+
+      - name: Validate build configuration
+        run: |
+          $parsedAppId = 0
+          if ([string]::IsNullOrWhiteSpace($env:REPOSITORY_URL)) {
+            throw 'Repository URL is empty. Set EGLANTINE_BUILD_REPO_URL or provide a repository_url input.'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:GIT_REF)) {
+            throw 'Git reference is empty. Set EGLANTINE_BUILD_REF or provide a git_ref input.'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_URL)) {
+            throw 'Steamworks SDK URL is empty. Set STEAMWORKS_SDK_URL or provide a steamworks_sdk_url input.'
+          }
+          if (-not [UInt32]::TryParse($env:STEAM_APP_ID, [ref]$parsedAppId) -or $parsedAppId -eq 0) {
+            throw "Steam App ID must be a positive number: $env:STEAM_APP_ID"
+          }
+
+          Write-Host "Repository: $env:REPOSITORY_URL"
+          Write-Host "Reference: $env:GIT_REF"
+          Write-Host "Steam App ID: $env:STEAM_APP_ID"
+
+      - name: Download Steamworks SDK
+        run: |
+          $sdkZip = Join-Path $env:RUNNER_TEMP 'steamworks-sdk.zip'
+          Invoke-WebRequest -Uri $env:STEAMWORKS_SDK_URL -OutFile $sdkZip -UseBasicParsing
+          if (-not (Test-Path -LiteralPath $sdkZip -PathType Leaf)) {
+            throw "Steamworks SDK download did not produce $sdkZip"
+          }
+          "STEAMWORKS_SDK_PATH=$sdkZip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Restore reusable build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}\eglantine-build-workspace\cache
+            ${{ runner.temp }}\eglantine-build-workspace\work
+          key: ${{ runner.os }}-eglantine-build-${{ env.REPOSITORY_URL }}-${{ env.GIT_REF }}-${{ env.STEAM_APP_ID }}
+          restore-keys: |
+            ${{ runner.os }}-eglantine-build-
+
+      - name: Write builder configuration
+        run: |
+          $workspace = Join-Path $env:RUNNER_TEMP 'eglantine-build-workspace'
+          New-Item -ItemType Directory -Path $workspace -Force | Out-Null
+          $configPath = Join-Path $env:RUNNER_TEMP 'eglantine-build-config.json'
+          $config = [ordered]@{
+            RepositoryUrl = $env:REPOSITORY_URL
+            GitRef = $env:GIT_REF
+            GitRefKind = 'branch'
+            SteamworksSdk = $env:STEAMWORKS_SDK_PATH
+            QtDir = ''
+            VulkanSdk = ''
+            Workspace = $workspace
+            SteamAppId = $env:STEAM_APP_ID
+            InstallMissing = 'True'
+            UseCompilerCache = 'False'
+            Language = 'en'
+          }
+          $config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $configPath -Encoding UTF8
+          "CONFIG_PATH=$configPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build the patched Eglantine binary
+        run: |
+          $statusPath = Join-Path $env:RUNNER_TEMP 'eglantine-build-status.txt'
+          .\builder\payload\Build-SteamRemotePlay.ps1 -ConfigPath $env:CONFIG_PATH -StatusPath $statusPath
+
+      - name: Locate the private build archive
+        id: archive
+        run: |
+          $workspace = Join-Path $env:RUNNER_TEMP 'eglantine-build-workspace'
+          $archive = Get-ChildItem -LiteralPath $workspace -Recurse -Filter '*.zip' -File |
+            Sort-Object LastWriteTimeUtc -Descending |
+            Select-Object -First 1
+          if (-not $archive) {
+            throw "No build zip was produced under $workspace."
+          }
+          "ARCHIVE_PATH=$($archive.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ARCHIVE_NAME=$($archive.Name)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Build archive: $($archive.FullName)"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        if: ${{ env.CREATE_RELEASE != 'true' }}
+        with:
+          name: ${{ env.RELEASE_NAME }}
+          path: ${{ env.ARCHIVE_PATH }}
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: ${{ env.CREATE_RELEASE == 'true' }}
+        with:
+          tag_name: main-${{ github.run_number }}
+          name: ${{ env.RELEASE_NAME }}
+          files: ${{ env.ARCHIVE_PATH }}
+          draft: false
+          prerelease: false
