@@ -1,4 +1,4 @@
-# Eglantine Remote Together
+﻿# Eglantine Remote Together
 
 Static GitHub Pages guide for trying the private, source-built Steam Remote Play Together patch for compatible [Eglantine](https://github.com/Eglantine-Community/Eglantine) versions and public GitHub forks.
 
@@ -36,3 +36,7 @@ The easiest version is a private GitHub Release asset:
 3. Trigger the build; the workflow will download the private SDK at runtime and then validate it before patching.
 
 This keeps the SDK out of the source tree while still letting a hosted runner fetch it without user login. A local filesystem path, a Steamworks.NET package, or an arbitrary non-Valve ZIP is not accepted by the builder.
+
+
+<!-- ci-trigger 2026-11-10 18:00:33 -->
+
