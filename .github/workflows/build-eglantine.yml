@@ -200,12 +200,29 @@ jobs:
           Write-Host "Build archive: $($archive.FullName)"
 
       - name: Upload build artifact
+        id: upload
         uses: actions/upload-artifact@v4
         if: ${{ env.CREATE_RELEASE != 'true' && github.event_name != 'workflow_dispatch' }}
         with:
           name: ${{ env.RELEASE_NAME }}
           path: ${{ env.ARCHIVE_PATH }}
           if-no-files-found: error
+
+      - name: Write PR artifact link
+        if: ${{ github.event_name == 'pull_request' && steps.upload.outcome == 'success' }}
+        run: |
+          $url = '${{ steps.upload.outputs.artifact-url }}'
+          if ([string]::IsNullOrWhiteSpace($url)) {
+            throw 'Artifact URL was not produced for the pull request build.'
+          }
+          $summary = @(
+            '## Build artifact',
+            '',
+            "Download: [$env:RELEASE_NAME]($url)",
+            ''
+          ) -join "`n"
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          Write-Host "PR build artifact: $url"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
