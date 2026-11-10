@@ -24,7 +24,7 @@ on:
         required: true
         default: '480'
       steamworks_sdk_url:
-        description: 'Direct download URL to the Steamworks SDK zip. The builder validates the downloaded archive contents later and rejects invalid SDK archives, so a valid partner URL or another direct .zip URL is allowed.'
+        description: 'Direct HTTPS download URL to the Steamworks SDK zip. For GitHub-hosted runners, use a direct private URL (for example a GitHub release asset, Azure Blob, S3, or self-hosted runner file). Steamworks partner login is not possible in a hosted runner.'
         required: true
         default: ''
       create_release:
@@ -51,7 +51,7 @@ jobs:
       REPOSITORY_URL: ${{ github.event.inputs.repository_url || vars.EGLANTINE_BUILD_REPO_URL || 'https://github.com/Eglantine-Community/Eglantine.git' }}
       GIT_REF: ${{ github.event.inputs.git_ref || vars.EGLANTINE_BUILD_REF || 'main' }}
       STEAM_APP_ID: ${{ github.event.inputs.steam_app_id || vars.STEAM_APP_ID || '480' }}
-      STEAMWORKS_SDK_URL: ${{ github.event.inputs.steamworks_sdk_url || vars.STEAMWORKS_SDK_URL || '' }}
+      STEAMWORKS_SDK_URL: ${{ github.event.inputs.steamworks_sdk_url || vars.STEAMWORKS_SDK_URL || secrets.STEAMWORKS_SDK_URL || '' }}
       CREATE_RELEASE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event.inputs.create_release == 'true' }}
       RELEASE_NAME: ${{ github.event.inputs.release_name || vars.EGLANTINE_BUILD_RELEASE_NAME || format('Eglantine Remote Play {0}', github.run_number) }}
     steps:
@@ -68,10 +68,10 @@ jobs:
             throw 'Git reference is empty. Set EGLANTINE_BUILD_REF or provide a git_ref input.'
           }
           if ([string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_URL)) {
-            throw 'Steamworks SDK URL is empty. Set STEAMWORKS_SDK_URL or provide a steamworks_sdk_url input.'
+            throw 'Steamworks SDK URL is empty. Set a direct private download URL in STEAMWORKS_SDK_URL, or pass a steamworks_sdk_url input. GitHub-hosted runners cannot authenticate to the Steamworks partner portal.'
           }
           if ($env:STEAMWORKS_SDK_URL -notmatch '(?i)^https?://.+\.zip(?:$|[?#])') {
-            throw "STEAMWORKS_SDK_URL must be a direct HTTP(S) download URL to a zip archive. The builder validates the downloaded archive contents later, so a Valve partner URL or another direct .zip URL is allowed: $env:STEAMWORKS_SDK_URL"
+            throw "STEAMWORKS_SDK_URL must be a direct HTTP(S) download URL to a zip archive. GitHub-hosted runners cannot log in to the Steamworks partner portal. Use a direct private URL instead: $env:STEAMWORKS_SDK_URL"
           }
           if (-not [UInt32]::TryParse($env:STEAM_APP_ID, [ref]$parsedAppId) -or $parsedAppId -eq 0) {
             throw "Steam App ID must be a positive number: $env:STEAM_APP_ID"
