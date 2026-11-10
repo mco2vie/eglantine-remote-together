@@ -24,7 +24,7 @@ on:
         required: true
         default: '480'
       steamworks_sdk_url:
-        description: 'Direct download URL to the Steamworks SDK zip. The builder validates the downloaded archive contents later, so a valid partner URL or another direct .zip URL is allowed.'
+        description: 'Direct download URL to the Steamworks SDK zip. The builder validates the downloaded archive contents later and rejects invalid SDK archives, so a valid partner URL or another direct .zip URL is allowed.'
         required: true
         default: ''
       create_release:
