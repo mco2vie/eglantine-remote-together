@@ -3,6 +3,13 @@ name: Build patched Eglantine
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
   workflow_dispatch:
     inputs:
       repository_url:
@@ -46,7 +53,7 @@ jobs:
       GIT_REF: ${{ github.event.inputs.git_ref || vars.EGLANTINE_BUILD_REF || 'main' }}
       STEAM_APP_ID: ${{ github.event.inputs.steam_app_id || vars.STEAM_APP_ID || '480' }}
       STEAMWORKS_SDK_URL: ${{ github.event.inputs.steamworks_sdk_url || vars.STEAMWORKS_SDK_URL || '' }}
-      CREATE_RELEASE: ${{ github.event_name == 'push' || github.event.inputs.create_release == 'true' }}
+      CREATE_RELEASE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event.inputs.create_release == 'true' }}
       RELEASE_NAME: ${{ github.event.inputs.release_name || vars.EGLANTINE_BUILD_RELEASE_NAME || format('Eglantine Remote Play {0}', github.run_number) }}
     steps:
       - name: Check out builder repo
