@@ -1,4 +1,4 @@
-name: Release patched Eglantine tag
+name: Release Inno Setup installer tag
 
 on:
   push:
@@ -14,134 +14,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release-eglantine:
+  release-installer:
     runs-on: windows-2022
-    timeout-minutes: 240
+    timeout-minutes: 120
     defaults:
       run:
         shell: powershell
-    env:
-      REPOSITORY_URL: ${{ vars.EGLANTINE_BUILD_REPO_URL || 'https://github.com/Eglantine-Community/Eglantine.git' }}
-      GIT_REF: ${{ github.ref_name }}
-      STEAM_APP_ID: ${{ vars.STEAM_APP_ID || '480' }}
-      STEAMWORKS_SDK_RELEASE_TAG: ${{ vars.STEAMWORKS_SDK_RELEASE_TAG || 'steamworks-sdk-165' }}
-      STEAMWORKS_SDK_ASSET_NAME: ${{ vars.STEAMWORKS_SDK_ASSET_NAME || 'steamworks_sdk_165.zip' }}
-      STEAMWORKS_SDK_REPO: ${{ vars.STEAMWORKS_SDK_REPO || github.repository }}
-      RELEASE_NAME: ${{ format('Eglantine Remote Play {0}', github.ref_name) }}
     steps:
-      - name: Check out builder repo
+      - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Validate release configuration
+      - name: Install Inno Setup
         run: |
-          $parsedAppId = 0
-          if ([string]::IsNullOrWhiteSpace($env:REPOSITORY_URL)) {
-            throw 'Repository URL is empty. Set EGLANTINE_BUILD_REPO_URL or provide a public Eglantine repo URL.'
-          }
-          if ([string]::IsNullOrWhiteSpace($env:GIT_REF)) {
-            throw 'Git reference is empty. Tag releases must include a tag name.'
-          }
-          $hasReleaseAsset = -not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_RELEASE_TAG) -and -not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_ASSET_NAME)
-          if (-not $hasReleaseAsset) {
-            throw 'Steamworks SDK release asset is missing. Set STEAMWORKS_SDK_RELEASE_TAG and STEAMWORKS_SDK_ASSET_NAME.'
-          }
-          if (-not [UInt32]::TryParse($env:STEAM_APP_ID, [ref]$parsedAppId) -or $parsedAppId -eq 0) {
-            throw "Steam App ID must be a positive number: $env:STEAM_APP_ID"
-          }
+          winget install --id JRSoftware.InnoSetup --exact --accept-source-agreements --accept-package-agreements --silent
 
-          Write-Host "Repository: $env:REPOSITORY_URL"
-          Write-Host "Reference: $env:GIT_REF"
-          Write-Host "Steam App ID: $env:STEAM_APP_ID"
-          Write-Host "Release tag: ${{ github.ref_name }}"
-
-      - name: Resolve private Steamworks SDK
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package the Inno Setup installer
         run: |
-          $sdkZip = Join-Path $env:RUNNER_TEMP 'steamworks-sdk.zip'
-          $releaseTag = $env:STEAMWORKS_SDK_RELEASE_TAG
-          $assetName = $env:STEAMWORKS_SDK_ASSET_NAME
-          $repo = $env:STEAMWORKS_SDK_REPO
-
-          if ([string]::IsNullOrWhiteSpace($releaseTag) -or [string]::IsNullOrWhiteSpace($assetName) -or [string]::IsNullOrWhiteSpace($repo)) {
-            throw 'A private GitHub Release asset was selected, but the required variables are missing: STEAMWORKS_SDK_RELEASE_TAG, STEAMWORKS_SDK_ASSET_NAME, and STEAMWORKS_SDK_REPO.'
-          }
-
-          $releaseApi = "https://api.github.com/repos/$repo/releases/tags/$releaseTag"
-          $headers = @{
-            Authorization = "Bearer $env:GITHUB_TOKEN"
-            Accept = 'application/vnd.github+json'
-            'X-GitHub-Api-Version' = '2022-11-28'
-          }
-          $release = Invoke-RestMethod -Uri $releaseApi -Headers $headers
-          $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
-          if (-not $asset) {
-            throw "No GitHub Release asset named '$assetName' was found in $repo at tag '$releaseTag'."
-          }
-
-          Write-Host "Downloading the Steamworks SDK from the private GitHub Release asset '$assetName'."
-          Invoke-WebRequest -Uri $asset.url -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN"; Accept = 'application/octet-stream'; 'X-GitHub-Api-Version' = '2022-11-28' } -OutFile $sdkZip -UseBasicParsing
-
-          if (-not (Test-Path -LiteralPath $sdkZip -PathType Leaf)) {
-            throw "Steamworks SDK download did not produce $sdkZip"
-          }
-          "STEAMWORKS_SDK_PATH=$sdkZip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Restore reusable build cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ runner.temp }}\eglantine-build-workspace\cache
-            ${{ runner.temp }}\eglantine-build-workspace\work
-          key: ${{ runner.os }}-eglantine-build-${{ env.REPOSITORY_URL }}-${{ env.GIT_REF }}-${{ env.STEAM_APP_ID }}
-          restore-keys: |
-            ${{ runner.os }}-eglantine-build-
-
-      - name: Write builder configuration
-        run: |
-          $workspace = Join-Path $env:RUNNER_TEMP 'eglantine-build-workspace'
-          New-Item -ItemType Directory -Path $workspace -Force | Out-Null
-          $configPath = Join-Path $env:RUNNER_TEMP 'eglantine-build-config.json'
-          $config = [ordered]@{
-            RepositoryUrl = $env:REPOSITORY_URL
-            GitRef = $env:GIT_REF
-            GitRefKind = 'tag'
-            SteamworksSdk = $env:STEAMWORKS_SDK_PATH
-            QtDir = ''
-            VulkanSdk = ''
-            Workspace = $workspace
-            SteamAppId = $env:STEAM_APP_ID
-            InstallMissing = 'True'
-            UseCompilerCache = 'False'
-            Language = 'en'
-          }
-          $config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $configPath -Encoding UTF8
-          "CONFIG_PATH=$configPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Build the patched Eglantine binary
-        run: |
-          $statusPath = Join-Path $env:RUNNER_TEMP 'eglantine-build-status.txt'
-          .\builder\payload\Build-SteamRemotePlay.ps1 -ConfigPath $env:CONFIG_PATH -StatusPath $statusPath
-
-      - name: Locate the generated build archive
-        id: archive
-        run: |
-          $workspace = Join-Path $env:RUNNER_TEMP 'eglantine-build-workspace'
-          $archive = Get-ChildItem -LiteralPath $workspace -Recurse -Filter '*.zip' -File |
-            Sort-Object LastWriteTimeUtc -Descending |
-            Select-Object -First 1
-          if (-not $archive) {
-            throw "No build zip was produced under $workspace."
-          }
-          "ARCHIVE_PATH=$($archive.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "ARCHIVE_NAME=$($archive.Name)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Build archive: $($archive.FullName)"
+          Set-Location builder
+          .\package-release.ps1
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ env.RELEASE_NAME }}
-          files: ${{ env.ARCHIVE_PATH }}
+          name: ${{ github.ref_name }}
+          files: |
+            builder\output\Eglantine-Steam-Remote-Play-Builder.exe
+            builder\release\output\Eglantine-Steam-Remote-Play-Builder.zip
+            builder\release\output\SHA256SUMS.txt
           draft: false
           prerelease: false

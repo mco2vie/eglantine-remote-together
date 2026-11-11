@@ -36,21 +36,14 @@ The builder creates a private local Eglantine build from a user-selected public 
 
 5. Copy the zip and checksums into `site/downloads/` together when publishing an update.
 
-## GitHub Actions: validation builds and tag releases
+## GitHub Actions: pull-request validation and tag release
 
 This repository includes two GitHub Actions workflows:
 
-- [../.github/workflows/build-eglantine.yml](../.github/workflows/build-eglantine.yml) validates a patched Eglantine build for pull requests and manual runs. It does not trigger on merges to `main` and does not publish a release.
-- [../.github/workflows/tag-release-eglantine.yml](../.github/workflows/tag-release-eglantine.yml) runs when a tag is pushed and publishes the generated build as a GitHub Release asset.
+- [../.github/workflows/build-eglantine.yml](../.github/workflows/build-eglantine.yml) validates a patched Eglantine build for pull requests only. It never runs on merges to `main` and does not publish a release.
+- [../.github/workflows/tag-release-eglantine.yml](../.github/workflows/tag-release-eglantine.yml) runs when a version tag is pushed and packages the installer created by Inno Setup. This is the workflow that produces the release assets.
 
-For PR validation and manual runs, set these repository variables in GitHub if you do not override them in the workflow form:
-
-- `EGLANTINE_BUILD_REPO_URL` — public repo or fork, for example `https://github.com/Eglantine-Community/Eglantine.git`
-- `EGLANTINE_BUILD_REF` — typically `main` or another branch/tag you want to test
-- `STEAM_APP_ID` — the App ID you own or have explicit permission to use
-- `STEAMWORKS_SDK_RELEASE_TAG` and `STEAMWORKS_SDK_ASSET_NAME` — the private Valve SDK release asset used by CI
-
-Manual runs can override the defaults in the workflow form. PR builds upload a short-lived workflow artifact with a link in the job summary; tag-pushed releases publish the generated build to the matching Git tag.
+The tag-release workflow does not build an Eglantine binary. It only packages the Windows installer that the builder produces from `builder/package-release.ps1`, which in turn runs Inno Setup and creates the `.exe`, `.zip`, and checksum files.
 
 The published installer SHA-256 is listed in [`../site/downloads/SHA256SUMS.txt`](../site/downloads/SHA256SUMS.txt). The builder source is UTF-8 and contains the same patch checksum hard-coded in `Build-SteamRemotePlay.ps1`; it refuses a modified patch at build time, and `package-release.ps1` refuses to package one. `.gitattributes` keeps Git from converting the patch's line endings, which would change its checksum. Installer files can differ byte-for-byte across machines or build times, so verify the published hash for the downloaded release rather than expecting a local rebuild to have the same hash.
 
