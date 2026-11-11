@@ -1,46 +1,120 @@
-# Eglantine Remote Together
+Eglantine Remote Together — Builder Fork Guide
 
-This repository contains the source, documentation, builder logic, and GitHub Actions automation for a private Eglantine Steam Remote Play Together patch flow.
+This repository contains a GitHub Actions workflow that builds a patched version of Eglantine (a Steam Remote Play tool) on a Windows runner. It does not contain the Eglantine source code itself — it fetches it, patches it, and produces a build artifact or GitHub Release.
 
-It is not a public binary distribution. The repo intentionally does not include generated builds, `steam_api64.dll`, Valve runtime material, Steamworks SDK content, keys, game files, or game dumps.
+This guide explains how to fork this repo and get a working build.
+What this repo does
 
-## Repository layout
+The workflow at .github/workflows/build-eglantine.yml:
 
-- `builder/` — Windows build wizard and PowerShell patch logic
-- `site/` — static GitHub Pages site for the project docs and downloads
-- `.github/workflows/build-eglantine.yml` — automated build workflow for PRs, main pushes, and manual runs
-- `LICENSE`, `NOTICE.md`, `LICENSE-NOTICE.md` — licensing and attribution
+    Clones a public Eglantine repository (or fork) at a specified branch/tag.
 
-## What this project is
+    Downloads the Steamworks SDK (which cannot be fetched automatically — see below).
 
-This project is meant to help an authorized user build a private patched Eglantine build with Steam Remote Play Together support.
+    Patches and compiles Eglantine with your Steam App ID baked in.
 
-The build expects:
+    Produces a .zip build archive, uploaded either as a workflow artifact or a GitHub Release.
 
-- a public Eglantine repo or fork URL
-- a branch or tag to build
-- a Steam App ID the user owns or is explicitly authorized to use
-- a real Valve Steamworks SDK archive (`steamworks_sdk_*.zip`) provided through a private direct URL or private release asset
+Runs on windows-2022, with a 240-minute timeout.
+Prerequisites
 
-The workflow validates the SDK before patching/building. Random ZIP files, partial archives, or wrapper packages such as Steamworks.NET standalone zips are rejected.
+Before forking, make sure you have:
 
-## What this project is not
+    A GitHub account with Actions enabled.
 
-- a generic, public Eglantine release repo
-- a place to store the Steamworks SDK or built binaries
-- a mirror for Valve runtime DLLs or SDK headers
+    A Steam App ID that belongs to you (e.g. your own game) or that you are explicitly authorized to use. Do not use an App ID you don't own — this is both a legal and a ToS issue.
 
-## Private SDK handling
+    Access to the Steamworks SDK zip. GitHub-hosted runners cannot log into the Steamworks partner portal, so you must provide the SDK some other way (see next section).
 
-GitHub-hosted runners cannot log in to the Steamworks partner portal, so the workflow expects the SDK to be available through a private, direct HTTP(S) URL or a private GitHub Release asset.
+Getting the Steamworks SDK into the build
 
-The direct URL input is intended for manual `workflow_dispatch` runs. Automated push/PR builds should use the release asset configuration, not a local machine path.
+You have two options. Pick one.
+Option A — Private GitHub Release asset (recommended)
 
-## Build rules and boundaries
+Upload the Steamworks SDK zip as an asset on a release in a repository you control (public or private). The workflow downloads it using the runner's GITHUB_TOKEN.
 
-- The repo remains source-only: no generated output is committed.
-- The builder validates the official Valve SDK layout before continuing.
-- The build only works for authorized Steam App IDs and valid private SDK access.
-- Users must review the patch, source, and upstream licensing before using or redistributing anything generated from this project.
+Then set these repository variables (Settings → Secrets and variables → Actions → Variables):
+Variable	Example	Purpose
+STEAMWORKS_SDK_RELEASE_TAG	steamworks-sdk-165	Tag of the release holding the zip
+STEAMWORKS_SDK_ASSET_NAME	steamworks_sdk_165.zip	Exact asset filename
+STEAMWORKS_SDK_REPO	yourname/your-private-repo	Repo containing the release (defaults to the current repo)
 
+    ⚠️ If the release is in a different private repo, the default GITHUB_TOKEN won't have access to it. Either put the release in the same repo, or create a PAT and adjust the workflow.
 
+Option B — Direct HTTPS URL (manual runs only)
+
+Provide a direct download URL to a .zip in the manual dispatch form (steamworks_sdk_url). The URL must:
+
+    Be plain https://…something.zip (no redirects to a login page),
+
+    Be reachable without authentication (a signed S3/Azure/blob URL works, or a self-hosted runner file).
+
+This option is disabled for push and pull_request runs on purpose — you cannot use it for automated builds.
+Forking and configuring
+
+    Fork this repo on GitHub.
+
+    Go to Settings → Actions → General and ensure workflows are enabled ("Allow all actions and reusable workflows").
+
+    (Recommended) Go to Settings → Secrets and variables → Actions → Variables and add:
+    Variable	Example	Used as
+    EGLANTINE_BUILD_REPO_URL	https://github.com/Eglantine-Community/Eglantine.git	Source repo to build
+    EGLANTINE_BUILD_REF	main	Branch/tag to build
+    STEAM_APP_ID	480	Your App ID
+    STEAMWORKS_SDK_RELEASE_TAG	steamworks-sdk-165	See above
+    STEAMWORKS_SDK_ASSET_NAME	steamworks_sdk_165.zip	See above
+    STEAMWORKS_SDK_REPO	yourname/your-private-repo	See above
+    EGLANTINE_BUILD_RELEASE_NAME	(optional)	Release title prefix
+
+    Make sure the repo has write permissions for Actions (Settings → Actions → General → Workflow permissions → Read and write permissions). The workflow needs contents: write to publish releases.
+
+Running a build
+Automatically
+
+    Push to main → builds and publishes a GitHub Release (tag main-<run_number>).
+
+    Open/update a PR → builds and uploads an artifact (retained 1 day) with a download link in the PR summary.
+
+Manually (recommended for first-time tests)
+
+Go to Actions → Build patched Eglantine → Run workflow and fill in:
+
+    repository_url — the Eglantine repo/fork to build
+
+    git_ref — branch or tag
+
+    steam_app_id — your App ID
+
+    steamworks_sdk_url — (optional) direct zip URL, or leave blank
+
+    steamworks_sdk_release_tag / steamworks_sdk_asset_name / steamworks_sdk_repo — (optional) if you didn't set repo variables
+
+    create_release — true (default) to publish a Release, false for artifact-only
+
+    release_name — (optional) custom title
+
+Manual runs default to publishing a Release with tag manual-<run_number>.
+Troubleshooting
+Error	Fix
+Steamworks SDK is missing	Set the release-asset variables or pass steamworks_sdk_url in a manual run.
+STEAMWORKS_SDK_URL is manual-only	You have a repo variable/secret named STEAMWORKS_SDK_URL; delete it and use the release-asset variables.
+No GitHub Release asset named '…' was found	Check the tag, asset filename, and that the release is in the repo named in STEAMWORKS_SDK_REPO.
+Resource not accessible by integration	Enable Read and write permissions for Actions in Settings → Actions → General.
+Build times out	240 min is generous; if it still fails, check the Eglantine repo's own build requirements.
+
+Full logs are under Actions → the run → build-eglantine → steps. The build script also writes a status file at %RUNNER_TEMP%\eglantine-build-status.txt.
+⚠️ Legal & policy notes
+
+    App ID: You must own the Steam App ID you bake in, or have explicit written permission to use it. Using someone else's App ID can get your Steam account and/or the build into trouble.
+
+    Steamworks SDK: Distributed by Valve under the Steamworks SDK License. Do not redistribute the SDK publicly, and follow Valve's terms for its use.
+
+    Eglantine / Steam ToS: Patching Steam Remote Play-related software may violate the Steam Subscriber Agreement or the terms of the game you're playing. This repo only provides a build pipeline — you are responsible for how you use the resulting binary.
+
+    No warranty: This workflow is provided as-is. Nothing here is endorsed by Valve, Steam, or the Eglantine project.
+
+What's next
+
+Once a build succeeds you'll get a .zip artifact. The contents depend on Eglantine's own build script (builder/payload/Build-SteamRemotePlay.ps1 in this repo). Consult that script and the Eglantine project for how to install/run the result.
+
+If you only want the build for personal experimentation, use a manual run with create_release: false so nothing is published to your repo's Releases.
