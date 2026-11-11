@@ -36,22 +36,21 @@ The builder creates a private local Eglantine build from a user-selected public 
 
 5. Copy the zip and checksums into `site/downloads/` together when publishing an update.
 
-## GitHub Actions: automatic release builds
+## GitHub Actions: validation builds and tag releases
 
-This repository also includes a GitHub Actions workflow at [../.github/workflows/build-eglantine.yml](../.github/workflows/build-eglantine.yml) that can:
+This repository includes two GitHub Actions workflows:
 
-- build the patched Eglantine automatically on every push to `main`;
-- publish that build as a GitHub Release asset when the main branch is updated;
-- run manually from the Actions tab with your own values for the Eglantine repository, branch, Steam App ID, and the Valve Steamworks SDK zip URL.
+- [../.github/workflows/build-eglantine.yml](../.github/workflows/build-eglantine.yml) validates a patched Eglantine build for pull requests and manual runs. It does not trigger on merges to `main` and does not publish a release.
+- [../.github/workflows/tag-release-eglantine.yml](../.github/workflows/tag-release-eglantine.yml) runs when a tag is pushed and publishes the generated build as a GitHub Release asset.
 
-For the automatic release build, set these repository variables in GitHub before pushing to `main`:
+For PR validation and manual runs, set these repository variables in GitHub if you do not override them in the workflow form:
 
 - `EGLANTINE_BUILD_REPO_URL` — public repo or fork, for example `https://github.com/Eglantine-Community/Eglantine.git`
-- `EGLANTINE_BUILD_REF` — normally `main`
+- `EGLANTINE_BUILD_REF` — typically `main` or another branch/tag you want to test
 - `STEAM_APP_ID` — the App ID you own or have explicit permission to use
-- `STEAMWORKS_SDK_URL` — a direct download URL for the Valve `steamworks_sdk_*.zip` package
+- `STEAMWORKS_SDK_RELEASE_TAG` and `STEAMWORKS_SDK_ASSET_NAME` — the private Valve SDK release asset used by CI
 
-Manual runs can override the defaults in the workflow form. Manual builds do not create a GitHub Release by default; they upload the generated ZIP as a workflow artifact so you can download it from the job summary.
+Manual runs can override the defaults in the workflow form. PR builds upload a short-lived workflow artifact with a link in the job summary; tag-pushed releases publish the generated build to the matching Git tag.
 
 The published installer SHA-256 is listed in [`../site/downloads/SHA256SUMS.txt`](../site/downloads/SHA256SUMS.txt). The builder source is UTF-8 and contains the same patch checksum hard-coded in `Build-SteamRemotePlay.ps1`; it refuses a modified patch at build time, and `package-release.ps1` refuses to package one. `.gitattributes` keeps Git from converting the patch's line endings, which would change its checksum. Installer files can differ byte-for-byte across machines or build times, so verify the published hash for the downloaded release rather than expecting a local rebuild to have the same hash.
 
