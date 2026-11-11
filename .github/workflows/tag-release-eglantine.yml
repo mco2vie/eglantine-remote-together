@@ -1,0 +1,46 @@
+name: Release Inno Setup installer tag
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'release-*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: eglantine-tag-release
+  cancel-in-progress: false
+
+jobs:
+  release-installer:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Install Inno Setup
+        run: |
+          winget install --id JRSoftware.InnoSetup --exact --accept-source-agreements --accept-package-agreements --silent
+
+      - name: Package the Inno Setup installer
+        run: |
+          Set-Location builder
+          .\package-release.ps1
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: |
+            builder\output\Eglantine-Steam-Remote-Play-Builder.exe
+            builder\release\output\Eglantine-Steam-Remote-Play-Builder.zip
+            builder\release\output\SHA256SUMS.txt
+          draft: false
+          prerelease: false
