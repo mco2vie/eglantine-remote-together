@@ -60,12 +60,11 @@ Forking and configuring
     Variable	Example	Used as
     EGLANTINE_BUILD_REPO_URL	https://github.com/Eglantine-Community/Eglantine.git	Source repo to build
     EGLANTINE_BUILD_REF	main	Branch/tag to build
-    STEAM_APP_ID	480	Your App ID
+    STEAM_APP_ID	1118310	Your App ID
     STEAMWORKS_SDK_RELEASE_TAG	steamworks-sdk-165	See above
     STEAMWORKS_SDK_ASSET_NAME	steamworks_sdk_165.zip	See above
     STEAMWORKS_SDK_REPO	yourname/your-private-repo	See above
-    EGLANTINE_BUILD_RELEASE_NAME	(optional)	Release title prefix
-
+    
     Make sure the repo has write permissions for Actions (Settings → Actions → General → Workflow permissions → Read and write permissions). The workflow needs contents: write to publish releases.
 
 Running a build
