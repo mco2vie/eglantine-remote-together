@@ -2,13 +2,13 @@
 
 This directory contains the complete source for the public **Eglantine Steam Remote Play Builder** Windows wizard.
 
-The builder creates a private local Eglantine build from a user-selected public GitHub repository or fork. It does not contain the Steamworks SDK, `steam_api64.dll`, any generated Eglantine build, keys, or game files.
+The builder creates a private local Eglantine build from a user-selected public GitHub repository or fork. This source tree does not contain the Steamworks SDK, `steam_api64.dll`, any generated Eglantine build, keys, or game files, and no Steamworks SDK is needed to use it. The packaged installer does include `steam_api64.dll` (see below).
 
 ## What each file does
 
 - [`eglantine-steam-builder.iss`](eglantine-steam-builder.iss) creates the Windows wizard with Inno Setup.
-- [`payload/Build-SteamRemotePlay.ps1`](payload/Build-SteamRemotePlay.ps1) validates the user-selected GitHub source and Steamworks SDK (zip or folder); installs or downloads missing tools when allowed; creates an isolated worktree; applies the source patch; and builds a local output folder. It shows six numbered steps in English or French.
-- [`payload/Check-Requirements.ps1`](payload/Check-Requirements.ps1) is used only by the wizard. It checks the PC (Windows, Microsoft C++ tools, Git, cached Qt/glslang, free space) and inspects or finds the Steamworks SDK zip. It is read-only.
+- [`payload/Build-SteamRemotePlay.ps1`](payload/Build-SteamRemotePlay.ps1) validates the user-selected GitHub source; installs or downloads missing tools when allowed; uses the `steam_api64.dll` installed next to it (downloading it only when it is missing); creates an isolated worktree; applies the source patch; and builds a local output folder. It shows six numbered steps in English or French.
+- [`payload/Check-Requirements.ps1`](payload/Check-Requirements.ps1) is used only by the wizard. It checks the PC (Windows, Microsoft C++ tools, Git, cached Qt/glslang, free space). It is read-only.
 - [`payload/List-GitRefs.ps1`](payload/List-GitRefs.ps1) is used only by the wizard. It lists the branches and tags of the selected GitHub repository for the version drop-down. It reads GitHub's public Git ref list, so it needs neither Git nor the GitHub API.
 - [`payload/Run-Build.cmd`](payload/Run-Build.cmd) opens the PowerShell builder and leaves its result visible.
 - [`payload/steam-remote-play-together.patch`](payload/steam-remote-play-together.patch) is the source patch applied by the builder.
@@ -26,7 +26,7 @@ The builder creates a private local Eglantine build from a user-selected public 
    .\package-release.ps1
    ```
 
-4. The script creates these local files:
+4. The script fetches `payload\steam_api64.dll` (git-ignored) from the pinned Steamworks.NET archive, checks it against the hashes in `Build-SteamRemotePlay.ps1`, and bundles it in the installer. It then creates these local files:
 
    ```text
    output\Eglantine-Steam-Remote-Play-Builder.exe
@@ -58,6 +58,18 @@ When the user leaves the Qt and Vulkan folders empty (the default), `Build-Steam
 | MinGit (only if no Git is installed) | 2.56.0.2 | [git-for-windows](https://github.com/git-for-windows/git/releases) |
 | GNU `patch.exe` (`usr\bin` of Git for Windows; only if no full Git for Windows is installed — Eglantine's CPM patches some libraries with it) | 2.56.0.2 | [git-for-windows](https://github.com/git-for-windows/git/releases) `.tar.bz2`, unpacked with Windows' `tar.exe` |
 | optional compiler cache (disabled in the GitHub Actions workflow; the repo prefers a reusable workspace cache instead) | 0.19.0, same as Eglantine's Windows CI | [mozilla/sccache](https://github.com/mozilla/sccache/releases) |
+| Steam runtime library `steam_api64.dll` (only when it is not next to the script, as in GitHub Actions; the installer ships it) | Steamworks SDK 1.65 | `Windows-x64\steam_api64.dll` of the [Steamworks.NET 2025.165.0](https://github.com/rlabrecque/Steamworks.NET/releases/tag/2025.165.0) standalone archive, byte-identical to Valve's `redistributable_bin`; both the archive and the DLL are hash-checked (same pins as the extension's release workflow) |
+
+## What the patch contains
+
+No Steamworks SDK is needed at build time. [`payload/steam-remote-play-together.patch`](payload/steam-remote-play-together.patch) is the diff from upstream `nx2` (`6be10b5`) to:
+
+1. Eglantine's extension system: commit `357ba63` of the [`extensions` branch of damienjacinto/Eglantine](https://github.com/damienjacinto/Eglantine/tree/extensions).
+2. `extensions/CMakeLists.txt` plus `extensions/remote_play_together/`, the [Steam Remote Play Together extension](https://github.com/damienjacinto/eglantine-remote-play-together) at tag `v0.0.3` (without its copy of `include/`, since the in-tree build uses `eglantine_extension_api`). One builder-only change: `STEAM_REMOTE_PLAY_APPID` sets the extension's default App ID (`RPT_DEFAULT_APP_ID`, otherwise 480).
+
+The builder configures with `-DENABLE_EXTENSIONS=ON -DEGLANTINE_BUILD_EXTENSIONS=ON -DSTEAM_API_LIBRARY=<steam_api64.dll>`, builds the `yuzu` and `remote-play-together` targets, and copies `bin\extensions\dev.eglantine.remote-play-together\` into the output folder.
+
+To update the patch, rebuild that tree inside Git with LF line endings (for example with a temporary `GIT_INDEX_FILE`, `read-tree`, `hash-object -w --no-filters` and `update-index`, so `core.autocrlf` cannot touch it), run `git diff --binary --full-index 6be10b5 <tree>`, check it with `git apply --cached --check` on the target branch, then update `$ExpectedPatchSha256` in `Build-SteamRemotePlay.ps1` and copy it to `site/downloads/`.
 
 When the user ticks *Install the Microsoft C++ compiler for me*, it downloads Microsoft's `vs_BuildTools.exe` from `aka.ms`, refuses it unless its Authenticode signature is valid and from Microsoft Corporation, and installs the VCTools workload with CMake (one UAC prompt). Update the versions and hashes in both `Build-SteamRemotePlay.ps1` and `Check-Requirements.ps1` together.
 
@@ -66,16 +78,16 @@ When the user ticks *Install the Microsoft C++ compiler for me*, it downloads Mi
 Each repository gets one reusable folder, `<workspace>\work\<repo>-<hash>\` with `source\` and `build\`:
 
 - The patched source is assembled inside Git first (temporary index, `git apply --cached`, `commit-tree`) and then checked out, so Git rewrites only files whose content changed and Ninja keeps every object file that is still valid.
-- `build\builder-fingerprint.txt` records the Visual Studio, MSVC, CMake, Qt, glslang, Steamworks and toolchain paths/versions. Any difference means a clean build folder. If configuring a reused folder fails, the builder retries once with a clean folder.
+- `build\builder-fingerprint.txt` records the Visual Studio, MSVC, CMake, Qt, glslang, Steam runtime and toolchain paths/versions. Any difference means a clean build folder. If configuring a reused folder fails, the builder retries once with a clean folder.
 - The GitHub Actions workflow uses an `actions/cache` entry for `<workspace>\cache` and `<workspace>\work` so repeated builds reuse the downloaded tools and previous source/build state without depending on sccache.
 
 ## Security and licensing boundaries
 
 - The wizard only accepts public HTTPS GitHub repository URLs and validates branches/tags before calling Git.
 - It works only inside the workspace selected by the user. It keeps one source and build folder per repository under `work\` and force-checks out only that builder-owned source folder; it never resets source it did not create or overwrites an Eglantine installation. A lock file stops two builds from using the same folder.
-- It asks the user to confirm that they trust the selected repository, that their Steamworks SDK is their own authorized copy, and that they have permission to use the selected App ID.
+- It asks the user to confirm that they trust the selected repository and that they have permission to use the selected App ID.
 - It requires an App ID that the user owns or is explicitly authorized to use and that is configured for Remote Play Together. It does not grant rights to use any third party's App ID.
-- The generated output may contain `steam_api64.dll` from the user's own SDK. That local output must not be committed, released, uploaded, or shared through this repository.
+- The generated output contains Valve's `steam_api64.dll` (a Steamworks redistributable) in `extensions\dev.eglantine.remote-play-together\`. That local output must not be committed, released, uploaded, or shared through this repository.
 
 The output is deliberately unsigned because this project has no code-signing certificate. Verify the published checksum and inspect this source before running it.
 

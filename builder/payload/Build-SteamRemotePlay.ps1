@@ -13,13 +13,29 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$BuilderVersion = '1.2.0'
+$BuilderVersion = '2.0.0'
 # Kept in step with payload/steam-remote-play-together.patch when a compatible feature update ships.
-$ExpectedPatchSha256 = 'abe36ec9a72e3c038f81bf889e586a6243e589732ca04bb3f4adfbe662e38bc9'
+# The patch adds Eglantine's extension system (damienjacinto/Eglantine, branch "extensions",
+# commit 357ba63) and the Steam Remote Play Together extension
+# (damienjacinto/eglantine-remote-play-together, tag v0.0.3) in extensions/remote_play_together.
+# The extension loads Steam's runtime library at runtime, so no Steamworks SDK is needed.
+$ExpectedPatchSha256 = '28cbdfdac7ff064194c0701514f5b85291d3aefb1771b8acb6b8c9a288ecf20b'
 # The app ID must be one you own or are explicitly authorized to use, and configured for
 # Remote Play Together. This builder does not grant permission to use another game's App ID.
 # The App ID can be changed later from Eglantine's Multiplayer menu.
 $MinimumFreeSpace = 15GB
+# Steam's runtime library, bundled next to the extension. It comes from the Steamworks.NET
+# release for Steamworks SDK 1.65, whose copies are byte-identical to Valve's
+# redistributable_bin; both the archive and the DLL are checked against pinned hashes (the same
+# ones the extension's own release workflow uses).
+$SteamRuntime = @{
+    Version = '1.65'
+    Url = 'https://github.com/rlabrecque/Steamworks.NET/releases/download/2025.165.0/Steamworks.NET-Standalone_2025.165.0.zip'
+    Sha256 = '9b86dda48b257013a350c8fea87edf3ab3f6f8fd6a812563fddec73fb1189fee'
+    Entry = 'Windows-x64\steam_api64.dll'
+    EntrySha256 = 'e6d9bafb9a41e42fba7b21553db49f8719027af3f0deb23ff86cfc44d60e776d'
+}
+$ExtensionId = 'dev.eglantine.remote-play-together'
 $MinimumCmake = [Version]'3.31.0'
 
 # Tools the builder downloads into <workspace>\cache\tools when the user did not pick their own.
@@ -58,7 +74,8 @@ $SccacheTool = @{
     CacheSize = '10G'
 }
 # Bump when the layout of the reusable build folder changes, so old folders are rebuilt cleanly.
-$BuildCacheVersion = 1
+# 2: Steam support moved from a Steamworks SDK link to the extension.
+$BuildCacheVersion = 2
 # Microsoft's Build Tools bootstrapper changes with every update, so it is checked by its
 # Microsoft Authenticode signature instead of a fixed hash.
 $VisualStudioBootstrapperUrl = 'https://aka.ms/vs/17/release/vs_BuildTools.exe'
@@ -684,51 +701,47 @@ function Install-VisualStudioBuildTools {
     }
 }
 
-# Accepts the "sdk" folder, the unzipped folder around it, or the SDK zip as downloaded.
-function Resolve-SteamworksSdk {
-    param(
-        [Parameter(Mandatory = $true)][string]$InputPath,
-        [Parameter(Mandatory = $true)][string]$CacheRoot
-    )
+# Returns Steam's runtime library (steam_api64.dll). The wizard installs it next to this script;
+# when it is missing (GitHub Actions, or the script run from a repository checkout) it is
+# downloaded once into the tool cache. Nothing from the Steamworks SDK is needed to build: the
+# extension loads this DLL from its own folder at runtime.
+function Get-SteamRuntime {
+    param([Parameter(Mandatory = $true)][string]$ToolCache)
 
-    if ([string]::IsNullOrWhiteSpace($InputPath)) {
-        throw 'The Steamworks SDK was not selected. Run the wizard again.'
-    }
-    $sdk = $InputPath
-    if (Test-Path -LiteralPath $InputPath -PathType Leaf) {
-        if ($InputPath -notmatch '\.zip$') {
-            throw "The Steamworks SDK must be the downloaded .zip file or the folder named sdk: $InputPath"
+    $bundled = Join-Path $PSScriptRoot 'steam_api64.dll'
+    if (Test-Path -LiteralPath $bundled -PathType Leaf) {
+        $actual = Get-FileHashString $bundled
+        if ($actual -ne $SteamRuntime.EntrySha256) {
+            throw "The bundled steam_api64.dll failed its integrity check (expected $($SteamRuntime.EntrySha256), got $actual). Re-download the builder."
         }
-        $zipHash = Get-FileHashString $InputPath
-        $extracted = Join-Path $CacheRoot ('steamworks\' + $zipHash.Substring(0, 16))
-        if (-not (Test-Path -LiteralPath $extracted -PathType Container)) {
-            Write-Log "Unzipping the Steamworks SDK into the private build cache."
-            Expand-ZipToFolder $InputPath $extracted
-        }
-        $header = Get-ChildItem -LiteralPath $extracted -Recurse -Filter 'isteamremoteplay.h' -File |
-            Where-Object { $_.Directory.Name -eq 'steam' -and $_.Directory.Parent.Name -eq 'public' } |
-            Sort-Object { $_.FullName.Length } | Select-Object -First 1
-        if (-not $header) {
-            throw 'This zip is not the Steamworks SDK. Download steamworks_sdk_XXX.zip from Valve again.'
-        }
-        $sdk = $header.Directory.Parent.Parent.FullName
-    } else {
-        $sdk = Require-Directory $InputPath 'Steamworks SDK folder'
-        if (-not (Test-Path -LiteralPath (Join-Path $sdk 'public\steam') -PathType Container) -and
-            (Test-Path -LiteralPath (Join-Path $sdk 'sdk\public\steam') -PathType Container)) {
-            $sdk = Join-Path $sdk 'sdk'
-        }
+        Write-Log "Using the Steam runtime library $($SteamRuntime.Version) bundled with the builder."
+        return [System.IO.Path]::GetFullPath($bundled)
     }
 
-    Require-File (Join-Path $sdk 'public\steam\steam_api.h') 'Steamworks SDK header' | Out-Null
-    $remotePlayHeader = Join-Path $sdk 'public\steam\isteamremoteplay.h'
-    Require-File $remotePlayHeader 'Steamworks Remote Play header' | Out-Null
-    Require-File (Join-Path $sdk 'redistributable_bin\win64\steam_api64.lib') 'Steamworks x64 import library' | Out-Null
-    Require-File (Join-Path $sdk 'redistributable_bin\win64\steam_api64.dll') 'Steamworks x64 runtime library' | Out-Null
-    if (-not (Select-String -LiteralPath $remotePlayHeader -SimpleMatch 'BEnableRemotePlayTogetherDirectInput' -Quiet)) {
-        throw 'The Steamworks SDK is too old. Download SDK 1.62 or newer from Valve.'
+    $folder = Join-Path $ToolCache ('steam-runtime-' + $SteamRuntime.Version)
+    $dll = Join-Path $folder 'steam_api64.dll'
+    if ((Test-Path -LiteralPath $dll -PathType Leaf) -and (Get-FileHashString $dll) -eq $SteamRuntime.EntrySha256) {
+        Write-Log "Steam runtime library $($SteamRuntime.Version) is already downloaded."
+        return $dll
     }
-    return [System.IO.Path]::GetFullPath($sdk)
+    $zip = Save-VerifiedDownload $SteamRuntime.Url `
+        (Join-Path $ToolCache ('downloads\Steamworks.NET-Standalone-' + $SteamRuntime.Version + '.zip')) `
+        $SteamRuntime.Sha256 ('Steam runtime library ' + $SteamRuntime.Version + ' (Steamworks.NET archive)')
+    $extracted = $folder + '.archive'
+    Expand-ZipToFolder $zip $extracted
+    try {
+        $entry = Join-Path $extracted $SteamRuntime.Entry
+        Require-File $entry 'steam_api64.dll in the Steamworks.NET archive' | Out-Null
+        $actual = Get-FileHashString $entry
+        if ($actual -ne $SteamRuntime.EntrySha256) {
+            throw "steam_api64.dll failed its integrity check (expected $($SteamRuntime.EntrySha256), got $actual)."
+        }
+        New-Item -ItemType Directory -Path $folder -Force | Out-Null
+        Copy-VerifiedFile $entry $dll
+    } finally {
+        Remove-Item -LiteralPath $extracted -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    return $dll
 }
 
 function Import-VcVars {
@@ -840,14 +853,21 @@ Reference: $Ref
 Commit: $Commit
 Steam App ID at build time: $AppId
 
-Start Steam, then start eglantine.exe directly. Use Multiplayer > Invite Friends to
-Remote Play Together or Multiplayer > Copy Remote Play Guest Link.
+Steam Remote Play Together is an Eglantine extension, in
+extensions\$ExtensionId\.
 
-The app starts as Steam App ID $AppId by default. Inside Eglantine, Multiplayer > Change
-Steam App ID... lets you choose another App ID for the next start.
+First start:
+1. Start Steam and sign in, then start eglantine.exe from this folder.
+2. Open Extensions > Manage Extensions..., tick "Steam Remote Play Together",
+   then restart Eglantine (the extension starts Steam before the main window).
+3. Use Multiplayer > Remote Play Together: Invite Friends... or Copy Guest Link.
 
-IMPORTANT: This folder contains Valve's steam_api64.dll from the Steamworks SDK. Keep this
-build for yourself. Do not share or publish it.
+The extension starts as Steam App ID $AppId until you choose another one with
+Multiplayer > Remote Play Together: Steam App ID... (takes effect at the next start).
+The Steam account must own that App ID.
+
+extensions\$ExtensionId\steam_api64.dll is Valve's Steam runtime library
+(Steamworks redistributable, SDK $($SteamRuntime.Version)). Keep this build for yourself.
 
 If a controller does nothing, press Shift+Tab, open Controller Settings, and choose a
 Gamepad template for each controller.
@@ -862,8 +882,8 @@ Write-Status -Force
 try {
     $ConfigPath = Require-File $ConfigPath 'builder configuration file'
     $config = Get-Content -LiteralPath $ConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    foreach ($property in @('RepositoryUrl', 'GitRef', 'SteamworksSdk', 'QtDir', 'VulkanSdk',
-                             'Workspace', 'SteamAppId')) {
+    # Configurations from builder 1.x also have SteamworksSdk, which is no longer used.
+    foreach ($property in @('RepositoryUrl', 'GitRef', 'QtDir', 'VulkanSdk', 'Workspace', 'SteamAppId')) {
         if (-not $config.PSObject.Properties.Name.Contains($property)) {
             throw "Builder configuration is missing '$property'. Run the wizard again."
         }
@@ -889,7 +909,6 @@ try {
 
     # Empty Qt / Vulkan folders mean "download what is needed"; InstallMissing allows installing the
     # Microsoft C++ Build Tools. Configurations from builder 1.1 always name both folders.
-    $steamInput = ([string]$config.SteamworksSdk).Trim()
     $qtInput = ([string]$config.QtDir).Trim()
     $vulkanInput = ([string]$config.VulkanSdk).Trim()
     $installMissing = $false
@@ -972,8 +991,8 @@ try {
     }
     Write-Log "Visual Studio: $($visualStudio.InstallPath)"
 
-    $steamSdk = Resolve-SteamworksSdk $steamInput $cacheRoot
-    Write-Log "Steamworks SDK: $steamSdk"
+    $steamRuntimeDll = Get-SteamRuntime $toolCache
+    Write-Log "Steam runtime library: $steamRuntimeDll"
 
     if ($qtInput) {
         $qtDir = Require-Directory $qtInput 'Qt MSVC folder'
@@ -1071,17 +1090,18 @@ try {
     Write-Step 3 (Get-Text 'Adding Steam Remote Play Together' 'Ajout de Steam Remote Play Together')
     $directPatch = Update-PatchedSource $git $mirror $sourceDir $commit $patch
     foreach ($requiredPath in @(
-        'CMakeModules\find\FindSteamworks.cmake',
-        'src\input_common\drivers\remote_play_keyboard.cpp',
-        'src\yuzu\steam_remote_play.cpp',
-        'src\yuzu\steam_remote_play.h')) {
+        'src\extension_api\include\eglantine\extension.h',
+        'src\yuzu\extensions\extension_manager.cpp',
+        'extensions\CMakeLists.txt',
+        'extensions\remote_play_together\extension.json',
+        'extensions\remote_play_together\remote_play_together.cpp')) {
         Require-File (Join-Path $sourceDir $requiredPath) "patched source file $requiredPath" | Out-Null
     }
     Write-Log ('Patch applied ({0}).' -f $(if ($directPatch) { 'directly' } else { 'with Git three-way merge' }))
 
     $cmakeCachePath = $cpmCache.Replace('\', '/')
     $qtCmakePath = $qtDir.Replace('\', '/')
-    $steamCmakePath = $steamSdk.Replace('\', '/')
+    $steamCmakePath = $steamRuntimeDll.Replace('\', '/')
     $glslangCmakePath = $glslang.Replace('\', '/')
     $cmakeArgs = @(
         '-S', $sourceDir,
@@ -1103,8 +1123,9 @@ try {
         '-DYUZU_ROOM_STANDALONE=OFF',
         '-DNIGHTLY_BUILD=OFF',
         '-DENABLE_WERROR=OFF',
-        '-DENABLE_STEAM_REMOTE_PLAY=ON',
-        "-DSTEAMWORKS_SDK_DIR=$steamCmakePath",
+        '-DENABLE_EXTENSIONS=ON',
+        '-DEGLANTINE_BUILD_EXTENSIONS=ON',
+        "-DSTEAM_API_LIBRARY=$steamCmakePath",
         "-DSTEAM_REMOTE_PLAY_APPID=$appId",
         "-DGLSLANGVALIDATOR=$glslangCmakePath",
         # Eglantine's CPMUtil skips its own search when PATCH_EXE is already set.
@@ -1130,7 +1151,7 @@ try {
         "cmake=$cmakeVersion",
         "qt=$qtDir",
         "glslang=$glslang",
-        "steamworks=$steamSdk",
+        "steam-runtime=$($SteamRuntime.EntrySha256)",
         "sccache=$sccache"
     ) -join "`n")
     $fingerprintPath = Join-Path $buildDir 'builder-fingerprint.txt'
@@ -1169,7 +1190,8 @@ try {
     }
     Write-Step 5 (Get-Text 'Building Eglantine' 'Compilation d''Eglantine') $buildHint
     try {
-        Invoke-Tool $cmake @('--build', $buildDir, '--target', 'yuzu', '--parallel') '' 'cmake build'
+        # The extension is its own target: yuzu does not depend on it.
+        Invoke-Tool $cmake @('--build', $buildDir, '--target', 'yuzu', 'remote-play-together', '--parallel') '' 'cmake build'
     } finally {
         if ($sccache) {
             try { Invoke-Tool $sccache @('--show-stats') '' 'sccache' } catch { }
@@ -1179,14 +1201,22 @@ try {
     Write-Step 6 (Get-Text 'Creating your private build folder' 'Création de votre dossier de compilation privé')
 
     $builtExe = Require-File (Join-Path $buildDir 'bin\eglantine.exe') 'built eglantine.exe'
-    $builtSteam = Require-File (Join-Path $buildDir 'bin\steam_api64.dll') 'built steam_api64.dll'
+    # The extension's CMake copies the library, its manifest and steam_api64.dll here.
+    $builtExtension = Require-Directory (Join-Path $buildDir ('bin\extensions\' + $ExtensionId)) 'built Remote Play Together extension'
+    $extensionFiles = @('remote_play_together.dll', 'extension.json', 'steam_api64.dll')
+    foreach ($file in $extensionFiles) {
+        Require-File (Join-Path $builtExtension $file) "built extension file $file" | Out-Null
+    }
     $builtSwitches = Join-Path $buildDir 'bin\nx2_switches.txt'
 
     $bundleName = '{0}-{1}-{2}-steam-remote-play' -f $repository.Repository, $shortCommit, $timestamp
     $bundleDir = Join-Path $workspace ('output\' + $bundleName)
-    New-Item -ItemType Directory -Path $bundleDir -Force | Out-Null
+    $bundleExtension = Join-Path $bundleDir ('extensions\' + $ExtensionId)
+    New-Item -ItemType Directory -Path $bundleDir, $bundleExtension -Force | Out-Null
     Copy-VerifiedFile $builtExe (Join-Path $bundleDir 'eglantine.exe')
-    Copy-VerifiedFile $builtSteam (Join-Path $bundleDir 'steam_api64.dll')
+    foreach ($file in $extensionFiles) {
+        Copy-VerifiedFile (Join-Path $builtExtension $file) (Join-Path $bundleExtension $file)
+    }
     if (Test-Path -LiteralPath $builtSwitches -PathType Leaf) {
         Copy-VerifiedFile $builtSwitches (Join-Path $bundleDir 'nx2_switches.txt')
     }
@@ -1220,13 +1250,16 @@ try {
             qtDir = $qtDir
             vulkanSdk = $vulkanSdk
             shaderCompiler = $glslang
-            steamworksSdk = $steamSdk
+            steamRuntime = $steamRuntimeDll
             visualStudio = $visualStudio.InstallPath
             cmakeVersion = $cmakeVersion.ToString()
         }
         artifacts = @(
             [ordered]@{ file = 'eglantine.exe'; sha256 = Get-FileHashString (Join-Path $bundleDir 'eglantine.exe') },
-            [ordered]@{ file = 'steam_api64.dll'; sha256 = Get-FileHashString (Join-Path $bundleDir 'steam_api64.dll') }
+            @($extensionFiles | ForEach-Object {
+                $relative = 'extensions\{0}\{1}' -f $ExtensionId, $_
+                [ordered]@{ file = $relative; sha256 = Get-FileHashString (Join-Path $bundleDir $relative) }
+            })
         )
         log = $script:LogPath
     }
@@ -1240,11 +1273,10 @@ try {
     Write-Log 'BUILD SUCCEEDED'
     Write-Log "Private build folder: $bundleDir"
     Write-Log "Private build zip:    $zipPath"
-    Write-Log 'Do not share or publish this build: it contains Valve''s steam_api64.dll.' 'WARN'
     Write-Host ''
     Write-Host (Get-Text `
-        'Done! Start Steam, then open eglantine.exe in the folder above. The folder opens now.' `
-        'Terminé ! Démarrez Steam, puis ouvrez eglantine.exe dans le dossier ci-dessus. Le dossier s''ouvre maintenant.') -ForegroundColor Green
+        'Done! Start Steam, then open eglantine.exe in the folder above. The first time, enable "Steam Remote Play Together" in Extensions > Manage Extensions... and restart Eglantine. The folder opens now.' `
+        'Terminé ! Démarrez Steam, puis ouvrez eglantine.exe dans le dossier ci-dessus. La première fois, activez « Steam Remote Play Together » dans Extensions > Manage Extensions... et redémarrez Eglantine. Le dossier s''ouvre maintenant.') -ForegroundColor Green
     if (-not $StatusPath) {
         # The wizard shows an "Open the build folder" button instead.
         try { Start-Process -FilePath 'explorer.exe' -ArgumentList @($bundleDir) } catch { }
