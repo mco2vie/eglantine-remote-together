@@ -24,14 +24,39 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
+      # winget is not available on GitHub's Windows Server runners, so the official installer is
+      # downloaded from Inno Setup's GitHub release, checked against a pinned SHA-256 and its
+      # Authenticode signer, and installed silently into the runner's temp folder.
       - name: Install Inno Setup
+        env:
+          INNO_URL: https://github.com/jrsoftware/issrc/releases/download/is-7_1_1/innosetup-7.1.1-x64.exe
+          INNO_SHA256: 8a5a6711c3766a6e5fb74f280ba0e3551e719ce94538d901fdbd1f8f9920b3f0
         run: |
-          winget install --id JRSoftware.InnoSetup --exact --accept-source-agreements --accept-package-agreements --silent
+          $ErrorActionPreference = 'Stop'
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup.exe'
+          Invoke-WebRequest -Uri $env:INNO_URL -OutFile $installer -UseBasicParsing
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $env:INNO_SHA256) {
+            throw "Inno Setup installer SHA-256 is $hash, expected $env:INNO_SHA256."
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Pyrsys B\.V\.') {
+            throw "Inno Setup installer signature is not valid: $($signature.Status) $($signature.SignerCertificate.Subject)"
+          }
+          $dir = Join-Path $env:RUNNER_TEMP 'InnoSetup'
+          $process = Start-Process -FilePath $installer -Wait -PassThru -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CURRENTUSER', "/DIR=`"$dir`"")
+          $iscc = Join-Path $dir 'ISCC.exe'
+          if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
+            throw "Inno Setup did not install (exit code $($process.ExitCode))."
+          }
+          "ISCC_PATH=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Package the Inno Setup installer
         run: |
           Set-Location builder
-          .\package-release.ps1
+          .\package-release.ps1 -IsccPath $env:ISCC_PATH
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
