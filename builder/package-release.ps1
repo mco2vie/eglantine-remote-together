@@ -1,4 +1,5 @@
-# Packages the shareable builder release. It does not package Steamworks SDK files or generated
+# Packages the shareable builder release. It bundles Steam's runtime library (steam_api64.dll,
+# a Steamworks redistributable) in the installer, but no Steamworks SDK files or generated
 # Eglantine builds.
 [CmdletBinding()]
 param(
@@ -47,6 +48,49 @@ $actualPatch = (Get-FileHash -LiteralPath $patchPath -Algorithm SHA256).Hash.ToL
 if ($actualPatch -ne $expectedPatch) {
     throw "The patch SHA-256 is $actualPatch but the builder expects $expectedPatch. If only line endings changed, delete the patch and run: git checkout -- builder/payload/steam-remote-play-together.patch"
 }
+
+# The installer bundles Steam's runtime library (Valve's Steamworks redistributable), so users do
+# not download it. It is never committed (see .gitignore): it is fetched here from the same pinned
+# Steamworks.NET archive the build script falls back to, and both hashes come from that script.
+if ($buildScript -notmatch '(?s)\$SteamRuntime = @\{(.*?)\r?\n\}') {
+    throw 'Could not find $SteamRuntime in Build-SteamRemotePlay.ps1.'
+}
+$steamBlock = $Matches[1]
+$steamPins = @{}
+foreach ($key in @('Url', 'Sha256', 'Entry', 'EntrySha256')) {
+    if ($steamBlock -notmatch ("(?m)^\s+{0} = '([^']+)'" -f $key)) {
+        throw "Could not read the Steam runtime $key from Build-SteamRemotePlay.ps1."
+    }
+    $steamPins[$key] = $Matches[1]
+}
+$bundledSteam = Join-Path $builderRoot 'payload\steam_api64.dll'
+$haveSteam = (Test-Path -LiteralPath $bundledSteam -PathType Leaf) -and
+    (Get-FileHash -LiteralPath $bundledSteam -Algorithm SHA256).Hash.ToLowerInvariant() -eq $steamPins.EntrySha256
+if (-not $haveSteam) {
+    $steamStage = Join-Path ([System.IO.Path]::GetTempPath()) ('eglantine-steam-runtime-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $steamStage | Out-Null
+    try {
+        $steamZip = Join-Path $steamStage 'archive.zip'
+        Write-Host "Downloading Steam's runtime library from $($steamPins.Url)"
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $steamPins.Url -OutFile $steamZip -UseBasicParsing
+        $zipHash = (Get-FileHash -LiteralPath $steamZip -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($zipHash -ne $steamPins.Sha256) {
+            throw "The Steamworks.NET archive SHA-256 is $zipHash but $($steamPins.Sha256) is expected."
+        }
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($steamZip, (Join-Path $steamStage 'x'))
+        $entry = Join-Path (Join-Path $steamStage 'x') $steamPins.Entry
+        $dllHash = (Get-FileHash -LiteralPath $entry -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($dllHash -ne $steamPins.EntrySha256) {
+            throw "steam_api64.dll SHA-256 is $dllHash but $($steamPins.EntrySha256) is expected."
+        }
+        Copy-Item -LiteralPath $entry -Destination $bundledSteam -Force
+    } finally {
+        Remove-Item -LiteralPath $steamStage -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+Write-Host "Bundled Steam runtime library: $bundledSteam"
 
 & $IsccPath '/Qp' $installerSource
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $installer -PathType Leaf)) {

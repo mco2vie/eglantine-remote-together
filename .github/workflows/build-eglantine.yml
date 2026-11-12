@@ -18,27 +18,11 @@ on:
       git_ref:
         description: 'Branch or tag to build'
         required: true
-        default: 'main'
+        default: 'nx2'
       steam_app_id:
-        description: 'Steam App ID to bake into the build. It must belong to you or be explicitly authorized.'
+        description: 'Default Steam App ID for the Remote Play Together extension (changeable later in Eglantine). It must belong to you or be explicitly authorized.'
         required: true
         default: '480'
-      steamworks_sdk_url:
-        description: 'Direct HTTPS download URL to the Steamworks SDK zip. For GitHub-hosted runners, use a direct private URL (for example a GitHub release asset, Azure Blob, S3, or self-hosted runner file). Steamworks partner login is not possible in a hosted runner.'
-        required: false
-        default: ''
-      steamworks_sdk_release_tag:
-        description: 'Optional GitHub release tag containing the private Steamworks SDK asset. Use this instead of a direct URL when the SDK is stored in a private GitHub Release.'
-        required: false
-        default: ''
-      steamworks_sdk_asset_name:
-        description: 'Optional GitHub release asset name for the private Steamworks SDK zip. Required when steamworks_sdk_release_tag is set.'
-        required: false
-        default: ''
-      steamworks_sdk_repo:
-        description: 'Optional repository containing the private Steamworks SDK release asset. Defaults to the current repository.'
-        required: false
-        default: ''
       release_name:
         description: 'Optional artifact title. Defaults to a generated value.'
         required: false
@@ -60,12 +44,8 @@ jobs:
         shell: powershell
     env:
       REPOSITORY_URL: ${{ github.event.inputs.repository_url || vars.EGLANTINE_BUILD_REPO_URL || 'https://github.com/Eglantine-Community/Eglantine.git' }}
-      GIT_REF: ${{ github.event.inputs.git_ref || vars.EGLANTINE_BUILD_REF || 'main' }}
+      GIT_REF: ${{ github.event.inputs.git_ref || vars.EGLANTINE_BUILD_REF || 'nx2' }}
       STEAM_APP_ID: ${{ github.event.inputs.steam_app_id || vars.STEAM_APP_ID || '480' }}
-      STEAMWORKS_SDK_URL: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.steamworks_sdk_url || '' }}
-      STEAMWORKS_SDK_RELEASE_TAG: ${{ github.event.inputs.steamworks_sdk_release_tag || vars.STEAMWORKS_SDK_RELEASE_TAG || 'steamworks-sdk-165' }}
-      STEAMWORKS_SDK_ASSET_NAME: ${{ github.event.inputs.steamworks_sdk_asset_name || vars.STEAMWORKS_SDK_ASSET_NAME || 'steamworks_sdk_165.zip' }}
-      STEAMWORKS_SDK_REPO: ${{ github.event.inputs.steamworks_sdk_repo || vars.STEAMWORKS_SDK_REPO || github.repository }}
       RELEASE_NAME: ${{ github.event.inputs.release_name || vars.EGLANTINE_BUILD_RELEASE_NAME || format('Eglantine Remote Play {0}', github.run_number) }}
     steps:
       - name: Check out builder repo
@@ -80,17 +60,6 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:GIT_REF)) {
             throw 'Git reference is empty. Set EGLANTINE_BUILD_REF or provide a git_ref input.'
           }
-          $hasDirectUrl = -not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_URL)
-          $hasReleaseAsset = -not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_RELEASE_TAG) -and -not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_ASSET_NAME)
-          if ($hasDirectUrl -and $env:GITHUB_EVENT_NAME -ne 'workflow_dispatch') {
-            throw "STEAMWORKS_SDK_URL is manual-only. Remove any stale repo variable or secret named STEAMWORKS_SDK_URL and use the private release asset settings for push and pull_request runs."
-          }
-          if (-not $hasDirectUrl -and -not $hasReleaseAsset) {
-            throw 'Steamworks SDK is missing. Set STEAMWORKS_SDK_URL, or set STEAMWORKS_SDK_RELEASE_TAG and STEAMWORKS_SDK_ASSET_NAME for a private GitHub Release asset. GitHub-hosted runners cannot authenticate to the Steamworks partner portal.'
-          }
-          if ($hasDirectUrl -and $env:STEAMWORKS_SDK_URL -notmatch '(?i)^https?://.+\.zip(?:$|[?#])') {
-            throw "STEAMWORKS_SDK_URL must be a direct HTTP(S) download URL to a zip archive. GitHub-hosted runners cannot log in to the Steamworks partner portal. Use a direct private URL instead: $env:STEAMWORKS_SDK_URL"
-          }
           if (-not [UInt32]::TryParse($env:STEAM_APP_ID, [ref]$parsedAppId) -or $parsedAppId -eq 0) {
             throw "Steam App ID must be a positive number: $env:STEAM_APP_ID"
           }
@@ -98,46 +67,6 @@ jobs:
           Write-Host "Repository: $env:REPOSITORY_URL"
           Write-Host "Reference: $env:GIT_REF"
           Write-Host "Steam App ID: $env:STEAM_APP_ID"
-
-      - name: Resolve private Steamworks SDK
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $sdkZip = Join-Path $env:RUNNER_TEMP 'steamworks-sdk.zip'
-
-          if (-not [string]::IsNullOrWhiteSpace($env:STEAMWORKS_SDK_URL)) {
-            $sdkUrl = $env:STEAMWORKS_SDK_URL
-            Write-Host "Downloading the Steamworks SDK from the configured direct URL."
-            Invoke-WebRequest -Uri $sdkUrl -OutFile $sdkZip -UseBasicParsing
-          }
-          else {
-            $releaseTag = $env:STEAMWORKS_SDK_RELEASE_TAG
-            $assetName = $env:STEAMWORKS_SDK_ASSET_NAME
-            $repo = $env:STEAMWORKS_SDK_REPO
-            if ([string]::IsNullOrWhiteSpace($releaseTag) -or [string]::IsNullOrWhiteSpace($assetName) -or [string]::IsNullOrWhiteSpace($repo)) {
-              throw 'A private GitHub Release asset was selected, but the required variables are missing: STEAMWORKS_SDK_RELEASE_TAG, STEAMWORKS_SDK_ASSET_NAME, and STEAMWORKS_SDK_REPO.'
-            }
-
-            $releaseApi = "https://api.github.com/repos/$repo/releases/tags/$releaseTag"
-            $headers = @{
-              Authorization = "Bearer $env:GITHUB_TOKEN"
-              Accept = 'application/vnd.github+json'
-              'X-GitHub-Api-Version' = '2022-11-28'
-            }
-            $release = Invoke-RestMethod -Uri $releaseApi -Headers $headers
-            $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
-            if (-not $asset) {
-              throw "No GitHub Release asset named '$assetName' was found in $repo at tag '$releaseTag'."
-            }
-
-            Write-Host "Downloading the Steamworks SDK from the private GitHub Release asset '$assetName'."
-            Invoke-WebRequest -Uri $asset.url -Headers @{ Authorization = "Bearer $env:GITHUB_TOKEN"; Accept = 'application/octet-stream'; 'X-GitHub-Api-Version' = '2022-11-28' } -OutFile $sdkZip -UseBasicParsing
-          }
-
-          if (-not (Test-Path -LiteralPath $sdkZip -PathType Leaf)) {
-            throw "Steamworks SDK download did not produce $sdkZip"
-          }
-          "STEAMWORKS_SDK_PATH=$sdkZip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Restore reusable build cache
         uses: actions/cache@v4
@@ -158,7 +87,6 @@ jobs:
             RepositoryUrl = $env:REPOSITORY_URL
             GitRef = $env:GIT_REF
             GitRefKind = 'branch'
-            SteamworksSdk = $env:STEAMWORKS_SDK_PATH
             QtDir = ''
             VulkanSdk = ''
             Workspace = $workspace
@@ -179,7 +107,8 @@ jobs:
         id: archive
         run: |
           $workspace = Join-Path $env:RUNNER_TEMP 'eglantine-build-workspace'
-          $archive = Get-ChildItem -LiteralPath $workspace -Recurse -Filter '*.zip' -File |
+          # Only output\ holds build zips; cache\tools\downloads also has zips (glslang, Steam runtime).
+          $archive = Get-ChildItem -LiteralPath (Join-Path $workspace 'output') -Filter '*.zip' -File |
             Sort-Object LastWriteTimeUtc -Descending |
             Select-Object -First 1
           if (-not $archive) {

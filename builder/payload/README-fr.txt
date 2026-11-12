@@ -13,12 +13,9 @@ build-manifest.json pour chaque compilation.
 Ce que vous préparez vous-même
 ------------------------------
 
-1. Le zip du SDK Steamworks, version 1.62 ou plus récente, téléchargé avec
-   votre compte Steamworks. Inutile de le décompresser.
-   https://partner.steamgames.com/downloads/list
-
-2. Un App ID Steam que vous possédez ou que vous êtes explicitement autorisé
-   à utiliser, et qui est configuré pour Remote Play Together.
+Un App ID Steam que vous possédez ou que vous êtes explicitement autorisé à
+utiliser, et qui est configuré pour Remote Play Together. Aucun SDK Steamworks
+n'est nécessaire.
 
 Ce que l'outil récupère pour vous s'il manque
 ---------------------------------------------
@@ -33,6 +30,9 @@ Pendant la compilation, l'assistant récupère ce qui manque :
 - Git, Qt 6.8.3 avec Qt Charts, et le compilateur de shaders glslang. Ils sont
   téléchargés uniquement dans <dossier de compilation>\cache\tools, vérifiés
   avec des SHA-256 fixes, et réutilisés par les compilations suivantes.
+
+La bibliothèque d'exécution de Steam (steam_api64.dll, SDK Steamworks 1.65)
+est fournie avec l'outil, dans ce dossier : rien n'est téléchargé chez Valve.
 
 Les utilisateurs avancés peuvent cocher « Utiliser mes propres dossiers Qt ou
 SDK Vulkan » dans l'assistant.
@@ -50,7 +50,10 @@ téléchargé.
 
 L'outil vérifie l'URL GitHub et la branche ou le tag, crée un miroir Git et un
 dossier de travail privés, vérifie et applique le patch de code source, puis
-s'arrête si le patch ne peut pas être appliqué proprement.
+s'arrête si le patch ne peut pas être appliqué proprement. Le patch ajoute le
+système d'extensions d'Eglantine et l'extension Steam Remote Play Together
+(https://github.com/damienjacinto/eglantine-remote-play-together), compilée
+avec Eglantine.
 
 N'utilisez qu'un dépôt auquel vous faites confiance. Compiler un code source
 peut exécuter les instructions CMake de ce dépôt sur votre PC.
@@ -60,9 +63,20 @@ caché, avec un réglage temporaire de la politique d'exécution. Pour recompile
 sans l'assistant, lancez Run-Build.cmd dans ce dossier. Il ne change
 pas vos réglages Windows PowerShell.
 
-Le résultat contient steam_api64.dll du SDK Valve. Ne partagez pas et ne
-publiez pas cette compilation. L'outil lui-même ne contient aucun fichier du
-SDK Steamworks.
+Utiliser la compilation
+-----------------------
+
+1. Démarrez Steam et connectez-vous, puis lancez eglantine.exe depuis le
+   dossier de sortie.
+2. La première fois, ouvrez Extensions > Manage Extensions..., cochez
+   « Steam Remote Play Together », puis redémarrez Eglantine.
+3. Utilisez Multiplayer > Remote Play Together: Invite Friends... ou Copy
+   Guest Link. Multiplayer > Remote Play Together: Steam App ID... change
+   l'App ID (pris en compte au prochain démarrage).
+
+Le dossier extensions\dev.eglantine.remote-play-together du résultat contient
+le fichier steam_api64.dll de Valve (un redistribuable Steamworks). Gardez
+cette compilation pour vous.
 
 Relancez l'outil pour compiler une autre version ou un autre fork. Les
 compilations suivantes réutilisent le travail précédent : seuls les fichiers

@@ -1,15 +1,17 @@
 ﻿; Eglantine Steam Remote Play Builder.
-; It installs a local build helper and source patch. It does not contain Steamworks files.
+; It installs a local build helper, the source patch and Steam's runtime library (steam_api64.dll,
+; a Steamworks redistributable that package-release.ps1 fetches and hash-checks). No Steamworks
+; SDK is needed.
 
 #define BuilderName "Eglantine Steam Remote Play Builder"
-#define BuilderVersion "1.2.0"
+#define BuilderVersion "2.0.0"
 
 [Setup]
 AppId={{E28530FA-3AE1-45A8-913D-C61E27F86937}
 AppName={#BuilderName}
 AppVersion={#BuilderVersion}
 AppVerName={#BuilderName} {#BuilderVersion}
-VersionInfoVersion=1.2.0.0
+VersionInfoVersion=2.0.0.0
 VersionInfoDescription={#BuilderName}
 DefaultDirName={localappdata}\Eglantine Steam Remote Play Builder
 DisableDirPage=yes
@@ -32,8 +34,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 
 [Messages]
-english.WelcomeLabel2=This wizard makes a new, private Eglantine Windows build with Steam Remote Play Together.%n%nIt does not change an Eglantine folder you already use. Instead it downloads a source version or GitHub fork you choose, applies the Steam patch, and builds a separate output folder.%n%nYou only need two things: the Steamworks SDK zip from Valve, and a Steam App ID you are authorized to use for Remote Play Together. The wizard checks your PC and gets the other free tools for you, after asking.%n%nOnly build a repository you trust: building source code runs that repository's build instructions on your PC.
-french.WelcomeLabel2=Cet assistant crée une nouvelle version Windows privée d'Eglantine avec Steam Remote Play Together.%n%nIl ne modifie pas votre dossier Eglantine existant. Il télécharge à la place la version du code source ou le fork GitHub de votre choix, applique le patch Steam, et crée un dossier de sortie séparé.%n%nVous n'avez besoin que de deux choses : le zip du SDK Steamworks fourni par Valve, et un App ID Steam que vous êtes autorisé à utiliser pour Remote Play Together. L'assistant vérifie votre PC et récupère pour vous les autres outils gratuits, après vous avoir demandé.%n%nN'utilisez qu'un dépôt auquel vous faites confiance : compiler son code peut exécuter ses instructions de compilation sur votre PC.
+english.WelcomeLabel2=This wizard makes a new, private Eglantine Windows build with Steam Remote Play Together.%n%nIt does not change an Eglantine folder you already use. Instead it downloads a source version or GitHub fork you choose, adds the Steam Remote Play Together extension, and builds a separate output folder.%n%nYou only need a Steam App ID you are authorized to use for Remote Play Together. The wizard checks your PC and gets the free tools for you, after asking.%n%nOnly build a repository you trust: building source code runs that repository's build instructions on your PC.
+french.WelcomeLabel2=Cet assistant crée une nouvelle version Windows privée d'Eglantine avec Steam Remote Play Together.%n%nIl ne modifie pas votre dossier Eglantine existant. Il télécharge à la place la version du code source ou le fork GitHub de votre choix, ajoute l'extension Steam Remote Play Together, et crée un dossier de sortie séparé.%n%nVous n'avez besoin que d'un App ID Steam que vous êtes autorisé à utiliser pour Remote Play Together. L'assistant vérifie votre PC et récupère pour vous les outils gratuits, après vous avoir demandé.%n%nN'utilisez qu'un dépôt auquel vous faites confiance : compiler son code peut exécuter ses instructions de compilation sur votre PC.
 english.FinishedHeadingLabel=The builder is ready
 french.FinishedHeadingLabel=L'outil de compilation est prêt
 english.FinishedLabelNoIcons=The builder is installed, but no build was started.%n%nTo build Eglantine later, run this installer again: it remembers your choices. Use only an App ID you own or are explicitly authorized to use.
@@ -154,50 +156,6 @@ english.QtDir=Qt MSVC 2022 64-bit folder with Qt Charts (6.8.3 tested), or empty
 french.QtDir=Dossier Qt MSVC 2022 64-bit avec Qt Charts (6.8.3 testé), ou vide :
 english.VulkanSdk=Vulkan SDK folder, or empty:
 french.VulkanSdk=Dossier du SDK Vulkan, ou vide :
-english.SteamCaption=Steamworks SDK
-french.SteamCaption=SDK Steamworks
-english.SteamDescription=The only file you have to download yourself
-french.SteamDescription=Le seul fichier que vous devez télécharger vous-même
-english.SteamSubCaption=Valve only lets Steamworks partners download this SDK, so the wizard cannot get it for you.
-french.SteamSubCaption=Valve réserve ce SDK aux partenaires Steamworks : l'assistant ne peut donc pas le récupérer pour vous.
-english.SteamStep1=1. Sign in with your Steamworks account and download the Steamworks SDK (version 1.62 or newer). You get a file named like steamworks_sdk_162.zip.
-french.SteamStep1=1. Connectez-vous avec votre compte Steamworks et téléchargez le SDK Steamworks (version 1.62 ou plus récente). Vous obtenez un fichier nommé par exemple steamworks_sdk_162.zip.
-english.SteamOpen=&Open Valve's download page
-french.SteamOpen=&Ouvrir la page de téléchargement de Valve
-english.SteamStep2=2. Select the downloaded zip file. You do not need to unzip it. A folder named sdk also works.
-french.SteamStep2=2. Sélectionnez le fichier zip téléchargé. Inutile de le décompresser. Un dossier nommé sdk fonctionne aussi.
-english.SteamSelectZip=Select the &zip file...
-french.SteamSelectZip=Choisir le fichier &zip...
-english.SteamSelectFolder=...or a &folder
-french.SteamSelectFolder=...ou un &dossier
-english.SteamZipPrompt=Select the Steamworks SDK zip file
-french.SteamZipPrompt=Sélectionnez le fichier zip du SDK Steamworks
-english.SteamZipFilter=Steamworks SDK (*.zip)|*.zip|All files (*.*)|*.*
-french.SteamZipFilter=SDK Steamworks (*.zip)|*.zip|Tous les fichiers (*.*)|*.*
-english.SteamFolderPrompt=Select the Steamworks SDK folder (named sdk)
-french.SteamFolderPrompt=Sélectionnez le dossier du SDK Steamworks (nommé sdk)
-english.SteamSearching=Looking for the Steamworks SDK in your Downloads folder...
-french.SteamSearching=Recherche du SDK Steamworks dans votre dossier Téléchargements...
-english.SteamFound=Found in your files and selected automatically.
-french.SteamFound=Trouvé dans vos fichiers et sélectionné automatiquement.
-english.SteamNone=Not selected yet.
-french.SteamNone=Pas encore sélectionné.
-english.SteamOk=Steamworks SDK %1: OK.
-french.SteamOk=SDK Steamworks %1 : OK.
-english.SteamOkNoVersion=Steamworks SDK: OK.
-french.SteamOkNoVersion=SDK Steamworks : OK.
-english.SteamNotFound=This file or folder does not exist.
-french.SteamNotFound=Ce fichier ou dossier n'existe pas.
-english.SteamNotSdk=This is not the Steamworks SDK. Select the steamworks_sdk zip from Valve, or its folder named sdk.
-french.SteamNotSdk=Ce n'est pas le SDK Steamworks. Sélectionnez le zip steamworks_sdk de Valve, ou son dossier nommé sdk.
-english.SteamBadZip=This zip file cannot be opened. Download it again from Valve.
-french.SteamBadZip=Ce fichier zip ne peut pas être ouvert. Téléchargez-le à nouveau depuis Valve.
-english.SteamTooOld=This Steamworks SDK is too old. Download version 1.62 or newer from Valve.
-french.SteamTooOld=Ce SDK Steamworks est trop ancien. Téléchargez la version 1.62 ou plus récente depuis Valve.
-english.SteamCheckFailed=The SDK could not be checked (%1).
-french.SteamCheckFailed=Le SDK n'a pas pu être vérifié (%1).
-english.SteamNeeded=Select a valid Steamworks SDK before continuing.
-french.SteamNeeded=Sélectionnez un SDK Steamworks valide avant de continuer.
 english.Automatic=downloaded automatically
 french.Automatic=téléchargé automatiquement
 english.ReviewInstallVs=Install the Microsoft C++ compiler:
@@ -236,8 +194,8 @@ english.BuildOpenLog=Open the &log
 french.BuildOpenLog=Ouvrir le &journal
 english.BuildStillRunning=The build is still running. Stop it first with "Stop the build".
 french.BuildStillRunning=La compilation est toujours en cours. Arrêtez-la d'abord avec « Arrêter la compilation ».
-english.FinishedDone=Your private Eglantine build is in:%n%n%1%n%nStart Steam, then start eglantine.exe from that folder.%n%nKeep this build private: it contains Valve's steam_api64.dll.
-french.FinishedDone=Votre compilation privée d'Eglantine se trouve dans :%n%n%1%n%nDémarrez Steam, puis lancez eglantine.exe depuis ce dossier.%n%nGardez cette compilation privée : elle contient le fichier steam_api64.dll de Valve.
+english.FinishedDone=Your private Eglantine build is in:%n%n%1%n%nStart Steam, then start eglantine.exe from that folder. The first time, open Extensions > Manage Extensions..., tick Steam Remote Play Together, and restart Eglantine.%n%nThe README.txt in that folder explains the rest.
+french.FinishedDone=Votre compilation privée d'Eglantine se trouve dans :%n%n%1%n%nDémarrez Steam, puis lancez eglantine.exe depuis ce dossier. La première fois, ouvrez Extensions > Manage Extensions..., cochez Steam Remote Play Together, puis redémarrez Eglantine.%n%nLe fichier README.txt de ce dossier explique la suite.
 english.FinishedFailed=The build did not finish:%n%n%1%n%nFix the problem, then run this installer again: it remembers your choices and keeps what was already downloaded.%n%nLog: %2
 french.FinishedFailed=La compilation ne s'est pas terminée :%n%n%1%n%nCorrigez le problème, puis relancez cet installateur : il se souvient de vos choix et conserve ce qui a déjà été téléchargé.%n%nJournal : %2
 english.AppIdCaption=Steam App ID
@@ -256,8 +214,6 @@ english.ConsentSubCaption=The builder makes an isolated worktree and does not ov
 french.ConsentSubCaption=L'outil crée un dossier de travail isolé et ne remplace pas votre installation Eglantine existante.
 english.ConsentTrust=I trust the GitHub repository above and understand that building it can run its build instructions on this PC.
 french.ConsentTrust=Je fais confiance au dépôt GitHub ci-dessus et je comprends que sa compilation peut exécuter ses instructions sur ce PC.
-english.ConsentSteamworks=I understand that the result contains Valve's steam_api64.dll from my own Steamworks SDK, and I must not share or publish the resulting build.
-french.ConsentSteamworks=Je comprends que le résultat contient le fichier steam_api64.dll de Valve provenant de mon propre SDK Steamworks, et que je ne dois pas partager ni publier cette compilation.
 english.ConsentAppId=I am authorized to use the App ID above, and it is configured for Remote Play Together.
 french.ConsentAppId=Je suis autorisé à utiliser l'App ID ci-dessus, et il est configuré pour Remote Play Together.
 english.StartBuild=Build Eglantine right after this step, with the progress shown in this window (recommended).
@@ -274,16 +230,14 @@ english.MissingFile=This folder is not the expected %1:%n%n%2
 french.MissingFile=Ce dossier n'est pas le %1 attendu :%n%n%2
 english.RootWorkspace=Choose a folder inside a drive for the build workspace, not the root of the drive itself.
 french.RootWorkspace=Choisissez un dossier à l'intérieur d'un disque pour l'espace de compilation, pas la racine du disque.
-english.ConsentNeeded=Tick the three confirmation boxes before continuing.
-french.ConsentNeeded=Cochez les trois cases de confirmation avant de continuer.
+english.ConsentNeeded=Tick the two confirmation boxes before continuing.
+french.ConsentNeeded=Cochez les deux cases de confirmation avant de continuer.
 english.BuilderLaunchFailed=The builder was installed, but Windows could not start its build window:%n%n%1%n%nOpen this folder and double-click Run-Build.cmd:%n%n%2
 french.BuilderLaunchFailed=L'outil a été installé, mais Windows n'a pas pu démarrer la fenêtre de compilation :%n%n%1%n%nOuvrez ce dossier et double-cliquez sur Run-Build.cmd :%n%n%2
 english.ReviewRepository=Repository:
 french.ReviewRepository=Dépôt :
 english.ReviewReference=Reference:
 french.ReviewReference=Référence :
-english.ReviewSteamworks=Steamworks SDK:
-french.ReviewSteamworks=SDK Steamworks :
 english.ReviewQt=Qt:
 french.ReviewQt=Qt :
 english.ReviewVulkan=Vulkan SDK:
@@ -305,6 +259,8 @@ Source: "payload\Run-Build.cmd"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\List-GitRefs.ps1"; Flags: dontcopy
 Source: "payload\Check-Requirements.ps1"; Flags: dontcopy
 Source: "payload\steam-remote-play-together.patch"; DestDir: "{app}"; Flags: ignoreversion
+; Valve's Steamworks redistributable, fetched and hash-checked by package-release.ps1 (never committed).
+Source: "payload\steam_api64.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "payload\README-en.txt"; DestDir: "{app}"; DestName: "README.txt"; Languages: english; Flags: ignoreversion
 Source: "payload\README-fr.txt"; DestDir: "{app}"; DestName: "README.txt"; Languages: french; Flags: ignoreversion
 
@@ -319,18 +275,12 @@ var
   RepoPage: TInputQueryWizardPage;
   ReqPage: TWizardPage;
   AdvancedPage: TInputDirWizardPage;
-  SteamPage: TWizardPage;
   WorkspaceEdit: TNewEdit;
   WorkspaceBrowseButton, RecheckButton: TNewButton;
   ReqMarks, ReqTexts: array[0..5] of TNewStaticText;
   InstallVsCheck, OwnToolsCheck: TNewCheckBox;
   ReqDone, ReqWindowsOk, ReqVsOk, ReqSpaceOk: Boolean;
   ReqFreeGB, ReqNeededGB, ReqCheckedWorkspace: String;
-  SteamEdit: TNewEdit;
-  SteamOpenButton, SteamZipButton, SteamFolderButton: TNewButton;
-  SteamStatusText: TNewStaticText;
-  SteamOk, SteamSearched, UpdatingSteam: Boolean;
-  SteamCheckedPath: String;
   BuildPage: TWizardPage;
   BuildStepLabel, BuildHintLabel, BuildElapsedLabel, BuildResultLabel: TNewStaticText;
   BuildProgress: TNewProgressBar;
@@ -734,7 +684,7 @@ begin
 end;
 
 // ---------------------------------------------------------------------------------------------
-// Helpers shared by the requirement and Steamworks pages.
+// Helpers shared by the requirement pages.
 
 // Runs a bundled read-only PowerShell helper and returns its output lines.
 function RunHelper(const ScriptName, Params: String; var Lines: TArrayOfString; var ErrorText: String): Boolean;
@@ -1007,155 +957,6 @@ begin
 end;
 
 // ---------------------------------------------------------------------------------------------
-// Steamworks SDK page.
-
-const
-  SteamNeutral = 0;
-  SteamGood = 1;
-  SteamBad = 2;
-
-procedure SetSteamStatusKind(const Text: String; Kind: Integer);
-begin
-  SteamStatusText.Caption := Text;
-  if Kind = SteamGood then
-    SteamStatusText.Font.Color := $00007F00
-  else if Kind = SteamBad then
-    SteamStatusText.Font.Color := $000000C0
-  else
-    SteamStatusText.Font.Color := clWindowText;
-  SteamStatusText.AdjustHeight();
-end;
-
-procedure SetSteamStatus(const Text: String; Good: Boolean);
-begin
-  if Good then
-    SetSteamStatusKind(Text, SteamGood)
-  else
-    SetSteamStatusKind(Text, SteamBad);
-end;
-
-// Checks the selected zip or folder; returns True when it is a usable SDK.
-function CheckSteamworks(): Boolean;
-var
-  Lines: TArrayOfString;
-  ErrorText, Line, Status, Code, Version: String;
-begin
-  Result := False;
-  SteamOk := False;
-  SteamCheckedPath := Trim(SteamEdit.Text);
-  if SteamCheckedPath = '' then
-  begin
-    SetSteamStatusKind(CustomMessage('SteamNone'), SteamNeutral);
-    Exit;
-  end;
-  if not RunHelper('Check-Requirements.ps1', '-Mode Steamworks -Path ' + QuoteArg(SteamCheckedPath), Lines, ErrorText) then
-  begin
-    SetSteamStatus(FmtMessage(CustomMessage('SteamCheckFailed'), [ErrorText]), False);
-    Exit;
-  end;
-  Line := Trim(Lines[0]);
-  Status := NextField(Line);
-  if Status = 'ok' then
-  begin
-    Version := NextField(Line);
-    if Version <> '' then
-      SetSteamStatus(FmtMessage(CustomMessage('SteamOk'), [Version]), True)
-    else
-      SetSteamStatus(CustomMessage('SteamOkNoVersion'), True);
-    SteamOk := True;
-    Result := True;
-    Exit;
-  end;
-  Code := NextField(Line);
-  if Code = 'notfound' then
-    SetSteamStatus(CustomMessage('SteamNotFound'), False)
-  else if Code = 'badzip' then
-    SetSteamStatus(CustomMessage('SteamBadZip'), False)
-  else if Code = 'tooold' then
-    SetSteamStatus(CustomMessage('SteamTooOld'), False)
-  else
-    SetSteamStatus(CustomMessage('SteamNotSdk'), False);
-end;
-
-procedure FindSteamworks();
-var
-  Lines: TArrayOfString;
-  ErrorText, Line: String;
-begin
-  SteamSearched := True;
-  SetSteamStatusKind(CustomMessage('SteamSearching'), SteamNeutral);
-  if RunHelper('Check-Requirements.ps1', '-Mode FindSteamworks', Lines, ErrorText) then
-  begin
-    Line := Trim(Lines[0]);
-    if NextField(Line) = 'found' then
-    begin
-      UpdatingSteam := True;
-      SteamEdit.Text := NextField(Line);
-      UpdatingSteam := False;
-      if CheckSteamworks() then
-        SetSteamStatus(SteamStatusText.Caption + ' ' + CustomMessage('SteamFound'), True);
-      Exit;
-    end;
-  end;
-  SetSteamStatusKind(CustomMessage('SteamNone'), SteamNeutral);
-end;
-
-procedure SteamEditChange(Sender: TObject);
-begin
-  if UpdatingSteam then
-    Exit;
-  SteamOk := False;
-  SteamCheckedPath := '';
-  SteamStatusText.Caption := '';
-end;
-
-procedure SteamOpenClick(Sender: TObject);
-var
-  ErrorCode: Integer;
-begin
-  ShellExec('open', 'https://partner.steamgames.com/downloads/list', '', '', SW_SHOWNORMAL, ewNoWait, ErrorCode);
-end;
-
-procedure SteamZipClick(Sender: TObject);
-var
-  FileName, InitialDir: String;
-begin
-  FileName := '';
-  InitialDir := AddBackslash(GetEnv('USERPROFILE')) + 'Downloads';
-  if GetOpenFileName(CustomMessage('SteamZipPrompt'), FileName, InitialDir,
-       CustomMessage('SteamZipFilter'), 'zip') then
-  begin
-    UpdatingSteam := True;
-    SteamEdit.Text := FileName;
-    UpdatingSteam := False;
-    CheckSteamworks();
-  end;
-end;
-
-procedure SteamFolderClick(Sender: TObject);
-var
-  Folder: String;
-begin
-  Folder := Trim(SteamEdit.Text);
-  if BrowseForFolder(CustomMessage('SteamFolderPrompt'), Folder, False) then
-  begin
-    UpdatingSteam := True;
-    SteamEdit.Text := Folder;
-    UpdatingSteam := False;
-    CheckSteamworks();
-  end;
-end;
-
-function CheckSteamworksPage(): Boolean;
-begin
-  if (not SteamOk) or (Trim(SteamEdit.Text) <> SteamCheckedPath) then
-    CheckSteamworks();
-  Result := SteamOk;
-  if not Result then
-    MsgBox(CustomMessage('SteamNeeded') + #13#10#13#10 + SteamStatusText.Caption, mbError, MB_OK);
-end;
-
-// ---------------------------------------------------------------------------------------------
 // Page creation.
 
 procedure CreateRequirementsPage(AfterID: Integer);
@@ -1260,75 +1061,6 @@ begin
       HasExpectedFile(VulkanSdk, 'Bin\glslangValidator.exe', CustomMessage('VulkanSdk'));
 end;
 
-procedure CreateSteamworksPage(AfterID: Integer);
-var
-  Step1, Step2: TNewStaticText;
-begin
-  SteamPage := CreateCustomPage(AfterID, CustomMessage('SteamCaption'), CustomMessage('SteamDescription'));
-
-  Step1 := TNewStaticText.Create(SteamPage);
-  Step1.Parent := SteamPage.Surface;
-  Step1.AutoSize := False;
-  Step1.WordWrap := True;
-  Step1.Width := SteamPage.SurfaceWidth;
-  Step1.Caption := CustomMessage('SteamSubCaption') + #13#10#13#10 + CustomMessage('SteamStep1');
-  Step1.AdjustHeight();
-
-  SteamOpenButton := TNewButton.Create(SteamPage);
-  SteamOpenButton.Parent := SteamPage.Surface;
-  SteamOpenButton.Caption := CustomMessage('SteamOpen');
-  SteamOpenButton.Left := ScaleX(14);
-  SteamOpenButton.Top := Step1.Top + Step1.Height + ScaleY(6);
-  SteamOpenButton.Width := ScaleX(280);
-  SteamOpenButton.Height := ScaleY(23);
-  SteamOpenButton.OnClick := @SteamOpenClick;
-
-  Step2 := TNewStaticText.Create(SteamPage);
-  Step2.Parent := SteamPage.Surface;
-  Step2.AutoSize := False;
-  Step2.WordWrap := True;
-  Step2.Width := SteamPage.SurfaceWidth;
-  Step2.Top := SteamOpenButton.Top + SteamOpenButton.Height + ScaleY(12);
-  Step2.Caption := CustomMessage('SteamStep2');
-  Step2.AdjustHeight();
-
-  SteamEdit := TNewEdit.Create(SteamPage);
-  SteamEdit.Parent := SteamPage.Surface;
-  SteamEdit.Left := ScaleX(14);
-  SteamEdit.Top := Step2.Top + Step2.Height + ScaleY(6);
-  SteamEdit.Width := SteamPage.SurfaceWidth - SteamEdit.Left;
-  SteamEdit.Text := GetPreviousData('SteamworksSdk', '');
-  SteamEdit.OnChange := @SteamEditChange;
-
-  SteamZipButton := TNewButton.Create(SteamPage);
-  SteamZipButton.Parent := SteamPage.Surface;
-  SteamZipButton.Caption := CustomMessage('SteamSelectZip');
-  SteamZipButton.Left := SteamEdit.Left;
-  SteamZipButton.Top := SteamEdit.Top + SteamEdit.Height + ScaleY(6);
-  SteamZipButton.Width := ScaleX(170);
-  SteamZipButton.Height := ScaleY(23);
-  SteamZipButton.OnClick := @SteamZipClick;
-
-  SteamFolderButton := TNewButton.Create(SteamPage);
-  SteamFolderButton.Parent := SteamPage.Surface;
-  SteamFolderButton.Caption := CustomMessage('SteamSelectFolder');
-  SteamFolderButton.Left := SteamZipButton.Left + SteamZipButton.Width + ScaleX(8);
-  SteamFolderButton.Top := SteamZipButton.Top;
-  SteamFolderButton.Width := ScaleX(130);
-  SteamFolderButton.Height := SteamZipButton.Height;
-  SteamFolderButton.OnClick := @SteamFolderClick;
-
-  SteamStatusText := TNewStaticText.Create(SteamPage);
-  SteamStatusText.Parent := SteamPage.Surface;
-  SteamStatusText.AutoSize := False;
-  SteamStatusText.WordWrap := True;
-  SteamStatusText.Left := SteamEdit.Left;
-  SteamStatusText.Top := SteamZipButton.Top + SteamZipButton.Height + ScaleY(10);
-  SteamStatusText.Width := SteamPage.SurfaceWidth - SteamEdit.Left;
-  SteamStatusText.Font.Style := [fsBold];
-  SteamStatusText.Caption := '';
-end;
-
 function SaveBuildConfig(const ConfigPath: String): Boolean;
 var
   Lines: TArrayOfString;
@@ -1342,20 +1074,19 @@ begin
     LanguageValue := 'fr'
   else
     LanguageValue := 'en';
-  SetArrayLength(Lines, 13);
+  SetArrayLength(Lines, 12);
   Lines[0] := '{';
   Lines[1] := '  "schemaVersion": 1,';
   Lines[2] := '  "RepositoryUrl": "' + JsonEscape(Trim(RepoPage.Values[0])) + '",';
   Lines[3] := '  "GitRef": "' + JsonEscape(GetGitRef()) + '",';
   Lines[4] := '  "GitRefKind": "' + JsonEscape(GetGitRefKind()) + '",';
-  Lines[5] := '  "SteamworksSdk": "' + JsonEscape(Trim(SteamEdit.Text)) + '",';
-  Lines[6] := '  "QtDir": "' + JsonEscape(GetOwnQtDir()) + '",';
-  Lines[7] := '  "VulkanSdk": "' + JsonEscape(GetOwnVulkanSdk()) + '",';
-  Lines[8] := '  "Workspace": "' + JsonEscape(GetWorkspace()) + '",';
-  Lines[9] := '  "SteamAppId": "' + JsonEscape(Trim(AppIdPage.Values[0])) + '",';
-  Lines[10] := '  "InstallMissing": ' + InstallValue + ',';
-  Lines[11] := '  "Language": "' + LanguageValue + '"';
-  Lines[12] := '}';
+  Lines[5] := '  "QtDir": "' + JsonEscape(GetOwnQtDir()) + '",';
+  Lines[6] := '  "VulkanSdk": "' + JsonEscape(GetOwnVulkanSdk()) + '",';
+  Lines[7] := '  "Workspace": "' + JsonEscape(GetWorkspace()) + '",';
+  Lines[8] := '  "SteamAppId": "' + JsonEscape(Trim(AppIdPage.Values[0])) + '",';
+  Lines[9] := '  "InstallMissing": ' + InstallValue + ',';
+  Lines[10] := '  "Language": "' + LanguageValue + '"';
+  Lines[11] := '}';
   Result := SaveStringsToUTF8File(ConfigPath, Lines, False);
 end;
 
@@ -1734,9 +1465,8 @@ begin
 
   CreateRequirementsPage(RepoPage.ID);
   CreateAdvancedPage(ReqPage.ID);
-  CreateSteamworksPage(AdvancedPage.ID);
 
-  AppIdPage := CreateInputQueryPage(SteamPage.ID,
+  AppIdPage := CreateInputQueryPage(AdvancedPage.ID,
     CustomMessage('AppIdCaption'), CustomMessage('AppIdDescription'), CustomMessage('AppIdSubCaption'));
   AppIdPage.Add(CustomMessage('AppId'), False);
   AppIdPage.Values[0] := GetPreviousData('SteamAppId', '');
@@ -1745,10 +1475,9 @@ begin
     CustomMessage('ConsentCaption'), CustomMessage('ConsentDescription'), CustomMessage('ConsentSubCaption'),
     False, False);
   ConsentPage.Add(CustomMessage('ConsentTrust'));
-  ConsentPage.Add(CustomMessage('ConsentSteamworks'));
   ConsentPage.Add(CustomMessage('ConsentAppId'));
   ConsentPage.Add(CustomMessage('StartBuild'));
-  ConsentPage.Values[3] := True;
+  ConsentPage.Values[2] := True;
 
   CreateBuildPage();
 end;
@@ -1761,7 +1490,6 @@ begin
     SetPreviousData(PreviousDataKey, 'GitRefKind', GetGitRefKind())
   else
     SetPreviousData(PreviousDataKey, 'GitRefKind', PreviousRefKind);
-  SetPreviousData(PreviousDataKey, 'SteamworksSdk', Trim(SteamEdit.Text));
   SetPreviousData(PreviousDataKey, 'QtDir', Trim(AdvancedPage.Values[0]));
   SetPreviousData(PreviousDataKey, 'VulkanSdk', Trim(AdvancedPage.Values[1]));
   if OwnToolsCheck.Checked then
@@ -1782,12 +1510,6 @@ begin
   begin
     if (not ReqDone) or (GetWorkspace() <> ReqCheckedWorkspace) then
       RunRequirementCheck();
-  end else if CurPageID = SteamPage.ID then
-  begin
-    if (Trim(SteamEdit.Text) = '') and not SteamSearched then
-      FindSteamworks()
-    else if Trim(SteamEdit.Text) <> SteamCheckedPath then
-      CheckSteamworks();
   end else if CurPageID = BuildPage.ID then
   begin
     if BuildState = '' then
@@ -1823,11 +1545,10 @@ begin
   // Silent installation is only for deployment/testing of the builder itself. It never starts a
   // build and it has no answers for custom pages, so retain their defaults in BuildConfig.json.
   Result := WizardSilent and ((PageID = RepoPage.ID) or (PageID = ReqPage.ID) or
-    (PageID = AdvancedPage.ID) or (PageID = SteamPage.ID) or
-    (PageID = AppIdPage.ID) or (PageID = ConsentPage.ID));
+    (PageID = AdvancedPage.ID) or (PageID = AppIdPage.ID) or (PageID = ConsentPage.ID));
   if (PageID = AdvancedPage.ID) and not OwnToolsCheck.Checked then
     Result := True;
-  if (PageID = BuildPage.ID) and (WizardSilent or not ConsentPage.Values[3] or not ConfigSaved) then
+  if (PageID = BuildPage.ID) and (WizardSilent or not ConsentPage.Values[2] or not ConfigSaved) then
     Result := True;
 end;
 
@@ -1853,8 +1574,6 @@ begin
     Result := CheckRequirementsPage()
   else if CurPageID = AdvancedPage.ID then
     Result := CheckAdvancedPage()
-  else if CurPageID = SteamPage.ID then
-    Result := CheckSteamworksPage()
   else if CurPageID = AppIdPage.ID then
   begin
     if not IsPositiveNumber(Trim(AppIdPage.Values[0])) then
@@ -1864,7 +1583,7 @@ begin
     end;
   end else if CurPageID = ConsentPage.ID then
   begin
-    if not ConsentPage.Values[0] or not ConsentPage.Values[1] or not ConsentPage.Values[2] then
+    if not ConsentPage.Values[0] or not ConsentPage.Values[1] then
     begin
       MsgBox(CustomMessage('ConsentNeeded'), mbError, MB_OK);
       Result := False;
@@ -1890,7 +1609,6 @@ begin
     VulkanText := 'glslang, ' + CustomMessage('Automatic');
   Result := CustomMessage('ReviewRepository') + NewLine + Space + Trim(RepoPage.Values[0]) + NewLine +
     CustomMessage('ReviewReference') + NewLine + Space + Reference + NewLine +
-    CustomMessage('ReviewSteamworks') + NewLine + Space + Trim(SteamEdit.Text) + NewLine +
     CustomMessage('ReviewQt') + NewLine + Space + QtText + NewLine +
     CustomMessage('ReviewVulkan') + NewLine + Space + VulkanText + NewLine +
     CustomMessage('ReviewWorkspace') + NewLine + Space + GetWorkspace() + NewLine +

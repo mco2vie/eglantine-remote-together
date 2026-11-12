@@ -2,20 +2,17 @@
 #
 #   -Mode System -Workspace <folder>
 #       One line per requirement: key|status|detail
-#   -Mode Steamworks -Path <zip file or sdk folder>
-#       ok|<version>|<path>   or   error|<code>|<detail>
-#   -Mode FindSteamworks
-#       found|<path>|<version>   or   none||
+#
+# No Steamworks SDK is needed: the builder downloads Steam's runtime library itself.
 #
 # Keep the tool versions and cache paths in step with Build-SteamRemotePlay.ps1.
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('System', 'Steamworks', 'FindSteamworks')]
+    [ValidateSet('System')]
     [string]$Mode,
-    [string]$Workspace = '',
-    [string]$Path = ''
+    [string]$Workspace = ''
 )
 
 Set-StrictMode -Version Latest
@@ -72,91 +69,6 @@ function Get-FreeSpaceGB {
     return [int][Math]::Floor([System.IO.DriveInfo]::new($root).AvailableFreeSpace / 1GB)
 }
 
-function Get-SdkVersionFromText {
-    param([string]$Text)
-    $match = [regex]::Match($Text, '(?m)^\s*v(\d+)\.(\d+)\b')
-    if ($match.Success) { return '{0}.{1}' -f $match.Groups[1].Value, $match.Groups[2].Value }
-    return ''
-}
-
-# Checks a Steamworks SDK zip or folder. Returns Status ok/error, Code, Version, Path.
-function Test-SteamworksSdk {
-    param([string]$Candidate)
-
-    $result = [PSCustomObject]@{ Status = 'error'; Code = 'notfound'; Version = ''; Path = $Candidate }
-    if ([string]::IsNullOrWhiteSpace($Candidate)) { return $result }
-
-    if (Test-Path -LiteralPath $Candidate -PathType Container) {
-        $sdk = $Candidate
-        # Accept the unzipped folder that contains "sdk" as well as "sdk" itself.
-        if (-not (Test-Path -LiteralPath (Join-Path $sdk 'public\steam') -PathType Container) -and
-            (Test-Path -LiteralPath (Join-Path $sdk 'sdk\public\steam') -PathType Container)) {
-            $sdk = Join-Path $sdk 'sdk'
-        }
-        $result.Path = $sdk
-        foreach ($file in @('public\steam\steam_api.h', 'public\steam\isteamremoteplay.h',
-                            'redistributable_bin\win64\steam_api64.lib', 'redistributable_bin\win64\steam_api64.dll')) {
-            if (-not (Test-Path -LiteralPath (Join-Path $sdk $file) -PathType Leaf)) {
-                $result.Code = 'notsdk'
-                return $result
-            }
-        }
-        $header = Get-Content -LiteralPath (Join-Path $sdk 'public\steam\isteamremoteplay.h') -Raw
-        $readme = Join-Path $sdk 'Readme.txt'
-        if (Test-Path -LiteralPath $readme -PathType Leaf) {
-            $result.Version = Get-SdkVersionFromText (Get-Content -LiteralPath $readme -Raw)
-        }
-    } elseif ((Test-Path -LiteralPath $Candidate -PathType Leaf) -and $Candidate -match '\.zip$') {
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        try {
-            $zip = [System.IO.Compression.ZipFile]::OpenRead($Candidate)
-        } catch {
-            $result.Code = 'badzip'
-            return $result
-        }
-        try {
-            $entries = @{}
-            foreach ($entry in $zip.Entries) { $entries[$entry.FullName.Replace('\', '/')] = $entry }
-            $headerName = $entries.Keys | Where-Object { $_ -match '(^|/)public/steam/isteamremoteplay\.h$' } |
-                Sort-Object Length | Select-Object -First 1
-            if (-not $headerName) {
-                $result.Code = 'notsdk'
-                return $result
-            }
-            $prefix = $headerName.Substring(0, $headerName.Length - 'public/steam/isteamremoteplay.h'.Length)
-            foreach ($file in @('public/steam/steam_api.h', 'redistributable_bin/win64/steam_api64.lib',
-                                'redistributable_bin/win64/steam_api64.dll')) {
-                if (-not $entries.ContainsKey($prefix + $file)) {
-                    $result.Code = 'notsdk'
-                    return $result
-                }
-            }
-            $reader = New-Object System.IO.StreamReader($entries[$headerName].Open())
-            try { $header = $reader.ReadToEnd() } finally { $reader.Dispose() }
-            if ($entries.ContainsKey($prefix + 'Readme.txt')) {
-                $reader = New-Object System.IO.StreamReader($entries[$prefix + 'Readme.txt'].Open())
-                try { $result.Version = Get-SdkVersionFromText $reader.ReadToEnd() } finally { $reader.Dispose() }
-            }
-        } finally {
-            $zip.Dispose()
-        }
-    } else {
-        return $result
-    }
-
-    if (-not $result.Version -and [System.IO.Path]::GetFileName($Candidate) -match 'steamworks_sdk_(\d)(\d+)') {
-        $result.Version = '{0}.{1}' -f $Matches[1], $Matches[2]
-    }
-    # The Remote Play Together input API is what the patch needs; it arrived in SDK 1.62.
-    if ($header -notmatch 'BEnableRemotePlayTogetherDirectInput') {
-        $result.Code = 'tooold'
-        return $result
-    }
-    $result.Status = 'ok'
-    $result.Code = ''
-    return $result
-}
-
 try {
     switch ($Mode) {
         'System' {
@@ -203,47 +115,6 @@ try {
                 if ($vs.Status -ne 'ok' -and $workspaceDrive -eq $systemDrive) { $needed += $VisualStudioSpaceGB }
                 $status = if ($free -ge $needed) { 'ok' } else { 'low' }
                 Write-Result 'space' $status ('{0}/{1}' -f $free, $needed)
-            }
-        }
-        'Steamworks' {
-            $check = Test-SteamworksSdk $Path
-            if ($check.Status -eq 'ok') {
-                Write-Output ('ok|{0}|{1}' -f $check.Version, $check.Path)
-            } else {
-                Write-Output ('error|{0}|{1}' -f $check.Code, $check.Version)
-            }
-        }
-        'FindSteamworks' {
-            $folders = @(
-                (Join-Path $env:USERPROFILE 'Downloads'),
-                [Environment]::GetFolderPath('Desktop'),
-                [Environment]::GetFolderPath('MyDocuments'),
-                'C:\Steamworks'
-            ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) } | Select-Object -Unique
-            $candidates = @()
-            foreach ($folder in $folders) {
-                $candidates += @(Get-ChildItem -LiteralPath $folder -Filter 'steamworks_sdk*.zip' -File -ErrorAction SilentlyContinue |
-                    ForEach-Object { $_.FullName })
-                $candidates += @(Get-ChildItem -LiteralPath $folder -Directory -ErrorAction SilentlyContinue |
-                    Where-Object { $_.Name -like 'steamworks*' -or $_.Name -eq 'sdk' } | ForEach-Object { $_.FullName })
-                if (Test-Path -LiteralPath (Join-Path $folder 'sdk\public\steam') -PathType Container) {
-                    $candidates += (Join-Path $folder 'sdk')
-                }
-            }
-            $best = $null
-            foreach ($candidate in ($candidates | Select-Object -Unique)) {
-                $check = Test-SteamworksSdk $candidate
-                if ($check.Status -ne 'ok') { continue }
-                $version = [Version]'0.0'
-                if ($check.Version) { $version = [Version]$check.Version }
-                if (-not $best -or $version -gt $best.SortVersion) {
-                    $best = [PSCustomObject]@{ Path = $candidate; Version = $check.Version; SortVersion = $version }
-                }
-            }
-            if ($best) {
-                Write-Output ('found|{0}|{1}' -f $best.Path, $best.Version)
-            } else {
-                Write-Output 'none||'
             }
         }
     }
