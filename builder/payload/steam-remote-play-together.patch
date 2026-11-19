@@ -1,5 +1,5 @@
 diff --git a/.gitignore b/.gitignore
-index 873b99bec20db2e942b2521e3c15c548fb5c8dff..8f24a46018359c6f52527f139f99c489560c22c0 100644
+index a0a274e6a14cd8515b29fe5f371d188eb3aadc49..1fca30b18eb582de6afda67c092ac784864629f3 100644
 --- a/.gitignore
 +++ b/.gitignore
 @@ -6,6 +6,10 @@
@@ -14,10 +14,10 @@ index 873b99bec20db2e942b2521e3c15c548fb5c8dff..8f24a46018359c6f52527f139f99c489
  out/
  AppDir/
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 04d0f17d74cca011221130aab394676fc2bd8144..0620c24b005ef2387f229231d09a78ea40c0113d 100644
+index 704baea33b480fd37b2bf840fe3195ba29fb85f1..4e3b018e3b1a368b919b19f4bd8f014b569a02b3 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -76,6 +76,8 @@ option(ENABLE_QT_TRANSLATION "Enable translations for the Qt frontend" OFF)
+@@ -79,6 +79,8 @@ option(ENABLE_QT_TRANSLATION "Enable translations for the Qt frontend" ON)
  option(ENABLE_UPDATE_CHECKER "Enable update checker (for Qt and Android)" OFF)
  cmake_dependent_option(YUZU_USE_QT_MULTIMEDIA "Use QtMultimedia for Camera"  OFF "NOT YUZU_USE_BUNDLED_QT" OFF)
  cmake_dependent_option(YUZU_USE_QT_WEB_ENGINE "Use QtWebEngine for web applet implementation" OFF "NOT YUZU_USE_BUNDLED_QT" OFF)
@@ -26,7 +26,7 @@ index 04d0f17d74cca011221130aab394676fc2bd8144..0620c24b005ef2387f229231d09a78ea
  set(YUZU_QT_MIRROR "" CACHE STRING "What mirror to use for downloading the bundled Qt libraries")
  cmake_dependent_option(YUZU_USE_BUNDLED_QT "Download bundled Qt binaries" "${MSVC}" "ENABLE_QT" OFF)
  
-@@ -728,6 +730,10 @@ endif()
+@@ -749,6 +751,10 @@ endif()
  
  add_subdirectory(src)
  
@@ -37,178 +37,6 @@ index 04d0f17d74cca011221130aab394676fc2bd8144..0620c24b005ef2387f229231d09a78ea
  if (ENABLE_DEBUG_TOOLS)
      add_subdirectory(tools/maxwell-disas)
      add_subdirectory(tools/maxwell-spirv)
-diff --git a/docs/Extensions.md b/docs/Extensions.md
-new file mode 100644
-index 0000000000000000000000000000000000000000..76f4e01b39c00944c3704bf6bfeac60a564cd365
---- /dev/null
-+++ b/docs/Extensions.md
-@@ -0,0 +1,141 @@
-+# Extensions
-+
-+Extensions are shared libraries that the Qt frontend loads at startup. They can add menu items
-+and dialogs, follow emulation events, create input devices and hand players to them, without
-+rebuilding Eglantine. The API is plain C, so an extension keeps working across Eglantine
-+updates and can be built with any compiler.
-+
-+- Public header: [`src/extension_api/include/eglantine/extension.h`](../src/extension_api/include/eglantine/extension.h)
-+- Examples are kept outside the repository. Put them in an `extensions/` folder at the root of the
-+  source tree to build them with Eglantine.
-+
-+## Installing and enabling
-+
-+Each extension lives in its own folder inside the `extensions` folder of the data directory
-+(`%APPDATA%\eglantine\extensions`, `~/.local/share/eglantine/extensions`, or `user/extensions`
-+for portable builds):
-+
-+```
-+extensions/
-+  dev.example.sample/
-+    extension.json
-+    sample.dll        (or sample.so / sample.dylib)
-+    any libraries it ships with
-+```
-+
-+**Extensions > Manage Extensions...** lists what was found. A new extension is off until it is
-+ticked there. Enabling it records the SHA-256 of its library; if the file changes later, the
-+extension stays off until it is enabled again.
-+
-+Ticking an extension starts it at once and unticking stops it: `egl_extension_shutdown` runs and
-+everything it added (menu items, timers, devices, player assignments) goes away. An extension with
-+the `early-start` permission only starts with the next launch, since part of it runs before the
-+main window. A library, once loaded, stays in memory until Eglantine exits, so an extension must
-+cope with `egl_extension_init` being called again after `egl_extension_shutdown`.
-+
-+An extension runs inside Eglantine with the same rights as Eglantine. Nothing sandboxes it. Only
-+enable extensions you trust.
-+
-+## The manifest
-+
-+```json
-+{
-+    "id": "dev.example.sample",
-+    "name": "Sample",
-+    "version": "1.0.0",
-+    "author": "Someone",
-+    "description": "What it does, shown in the Extensions dialog.",
-+    "api_version": 1,
-+    "permissions": ["ui", "input"],
-+    "library": {"windows": "sample.dll", "linux": "sample.so", "macos": "sample.dylib"}
-+}
-+```
-+
-+| Field | |
-+|---|---|
-+| `id` | Required. 1 to 64 characters among `a-z 0-9 . - _`. Settings and data are stored under it. |
-+| `api_version` | Required. The `EGL_API_VERSION` the extension was built against. Newer than the build: not loaded. |
-+| `library` | Required. A file name in the extension folder, or one per platform. |
-+| `permissions` | The interfaces the extension may fetch, see below. |
-+| `name`, `version`, `author`, `description` | Shown in the Extensions dialog. |
-+
-+| Permission | Grants |
-+|---|---|
-+| `early-start` | `egl_extension_preinit` is called before the windowing, graphics and input subsystems start. |
-+| `ui` | The `egl.ui` interface: menus, status bar, dialogs, clipboard, opening web links. |
-+| `input` | The `egl.input` interface: extension input devices, the device list, player assignments. |
-+
-+`egl.core` (logging, folders, settings, timers, events) is always available.
-+
-+## Lifecycle
-+
-+```c
-+uint32_t egl_extension_api_version(void);        /* required: return EGL_API_VERSION */
-+int      egl_extension_preinit(const EglHost*);  /* optional, needs early-start */
-+int      egl_extension_init(const EglHost*);     /* required, once the main window exists */
-+void     egl_extension_shutdown(void);           /* optional, when the application closes */
-+```
-+
-+`preinit` and `init` return 0 on success. Any other value disables the extension and removes
-+everything it registered. Unticking and ticking it again in the Extensions dialog calls `init`
-+again (and `shutdown` before), without unloading the library. In `preinit` only `egl.core` logging, folders and settings
-+work; use it for what must happen first, such as setting environment variables read by SDL or
-+starting a library that hooks the graphics API.
-+
-+Every call into the extension, and every host function except `post_to_ui`, runs on the UI
-+thread. An extension with its own threads hands work back with `post_to_ui`. Strings are UTF-8
-+and only valid during the call.
-+
-+Functionality comes in interfaces:
-+
-+```c
-+const EglUiApi* ui = host->get_interface(host->context, EGL_UI_INTERFACE, 1);
-+```
-+
-+`get_interface` returns NULL for an unknown interface or version, one the manifest did not ask
-+for, or one not available in the current phase.
-+
-+## Input and players
-+
-+`egl.input` exposes Eglantine's concepts, not its internals:
-+
-+- **Extension devices.** `create_device` makes a gamepad or keyboard that the extension drives with
-+  `set_button`, `set_stick`, `set_motion` and `set_key` (USB HID usages). They show up in the
-+  controller settings next to physical devices, and the device name identifies them across
-+  sessions, so a mapping the user saves for one keeps working.
-+- **The device list.** `list_devices` reports every device with an id, its backend and, for SDL
-+  devices, the USB vendor and product ids. `EGL_EVENT_INPUT_DEVICES_CHANGED` fires on hotplug.
-+- **Temporary player assignments.** `assign_device` maps and connects a player to a device using
-+  that device's default mapping. The assignment is layered over the saved controller settings and
-+  never written to them: it survives games booting and stopping, is taken down while a controller
-+  configuration dialog is open and put back after, and ends with `release_player`, when the device
-+  disconnects (the extension gets `EGL_EVENT_PLAYER_RELEASED`), or at shutdown. The player then
-+  returns to the user's own settings. Player `-1` picks the first player from Player 2 that is
-+  neither connected nor assigned.
-+
-+## Versioning rules
-+
-+- An interface struct only gains members at its end, and `struct_size` tells how much of it the
-+  host fills. Check it before calling a function added after version 1.
-+- A change that is not an addition gets a new interface version (`egl.ui` version 2) or a new
-+  interface. The host keeps serving the old one.
-+- Structs the extension passes in (`EglEmulationInfo`, `EglPlayerInfo`) carry `struct_size` too.
-+  Arrays of structs (`list_devices`) cannot grow; a later version would add a new function.
-+
-+## Developing an extension
-+
-+An extension needs only the header. Examples in an `extensions/` folder at the root of the
-+source tree are built with Eglantine (`EGLANTINE_BUILD_EXTENSIONS`, on by default) and copied
-+next to the executable, in
-+`<exe dir>/extensions/<id>/`, which is also searched. Two environment variables help:
-+
-+| Variable | Effect |
-+|---|---|
-+| `EGLANTINE_EXTENSIONS_DIR` | More folders to search, separated by `;` on Windows and `:` elsewhere. |
-+| `EGLANTINE_EXTENSIONS_DEV=1` | Skip the hash check, so a rebuilt library loads without enabling it again. |
-+
-+An extension still has to be enabled once. The state, including each extension's settings, is in
-+`extensions.json` in the config folder.
-+
-+On Windows the loader looks for an extension's dependencies in its own folder first. On Linux and
-+macOS, link the extension with an `$ORIGIN` (or `@loader_path`) RPATH to get the same behaviour.
-diff --git a/docs/Options.md b/docs/Options.md
-index ece6bdeba684c7ec161ff4a6189f624f6778d4bb..01bef67cf0afafe82bd6e85ee7460c319c957ea8 100644
---- a/docs/Options.md
-+++ b/docs/Options.md
-@@ -85,6 +85,8 @@ Also desktop-only, but apply strictly to Qt
- 
- - `ENABLE_QT` (ON) Enable the Qt frontend (recommended)
- - `ENABLE_QT_TRANSLATION` (OFF) Enable translations for the Qt frontend
-+- `ENABLE_EXTENSIONS` (ON) Load extensions from the extensions folder. See [Extensions](./Extensions.md)
-+  - `EGLANTINE_BUILD_EXTENSIONS` (ON) Build the example extensions in `extensions/`, when that folder is present (it is not part of the repository)
- - `YUZU_USE_BUNDLED_QT` (ON for MSVC) Download bundled Qt binaries
-   - Not recommended on Linux. For Windows and macOS, the provided build is statically linked.
- - `YUZU_QT_MIRROR` (string) What mirror to use for downloading the bundled Qt libraries
-diff --git a/docs/README.md b/docs/README.md
-index 5bcaf30239a82b3dcd29c8880adddc13f89282f4..85541793f69cf489f42b60bd991a84e48f157555 100644
---- a/docs/README.md
-+++ b/docs/README.md
-@@ -23,6 +23,7 @@ This contains documentation created by developers, build instructions, guideline
-   - **[Dynarmic](./dynarmic/README.md)**
-   - **[HOS Kernel](./HosKernel.md)**
-   - **[Settings](./Settings.md)**
-+  - **[Extensions](./Extensions.md)**
- 
- ## Policies
- 
 diff --git a/extensions/CMakeLists.txt b/extensions/CMakeLists.txt
 new file mode 100644
 index 0000000000000000000000000000000000000000..0f88aa60ddaa435f5bca732eb616215cd868e4a0
@@ -1817,23 +1645,23 @@ index 0000000000000000000000000000000000000000..d04f941f0174b80364795de9a831a19b
 +
 +} // namespace steam
 diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
-index c15294ff7f8fed67da220fd2bf92cba0aa3de269..e4d7b8d5f8bb0f2e01a468715321c575784fffcd 100644
+index 2c3dcd39e8d3e074b5b62e87cbf4565dd6411e3d..cd07f97215d99eabbfe967f2a8c9b2d3aa58ac2a 100644
 --- a/src/CMakeLists.txt
 +++ b/src/CMakeLists.txt
-@@ -278,6 +278,8 @@ add_subdirectory(hid_core)
+@@ -289,6 +289,8 @@ add_subdirectory(hid_core)
  add_subdirectory(input_common)
  add_subdirectory(frontend_common)
  add_subdirectory(shader_recompiler)
 +add_subdirectory(extension_api)
 +add_subdirectory(extension_host)
  
- if(YUZU_TESTS)
-     add_subdirectory(tests)
+ if (ENABLE_MCP_SERVER)
+     add_subdirectory(mcp)
 diff --git a/src/common/fs/fs_paths.h b/src/common/fs/fs_paths.h
-index 86a8b0585a446f1730c3b30d57031a633c66916e..6faf781d99bd3fcff4221c3bf9aa8346dd70a3f6 100644
+index eca7ac7192ed2a8315317c44775dd1a4dcf47b26..b56122fa6d1713fe12a81d1ca58d919e69325bd3 100644
 --- a/src/common/fs/fs_paths.h
 +++ b/src/common/fs/fs_paths.h
-@@ -30,6 +30,7 @@
+@@ -33,6 +33,7 @@
  #define SDMC_DIR "sdmc"
  #define SHADER_DIR "shader"
  #define STREAMLINE_DIR "streamline"
@@ -1842,10 +1670,10 @@ index 86a8b0585a446f1730c3b30d57031a633c66916e..6faf781d99bd3fcff4221c3bf9aa8346
  #define ICONS_DIR "icons"
  
 diff --git a/src/common/fs/path_util.cpp b/src/common/fs/path_util.cpp
-index a075dcf0a7068bdd52b01995d63331a553fd223e..6000777359491b3068869bbea1d1f32ca2744cfa 100644
+index e17797501b36fa9a6246e576bc4d4d639a0d0234..13310a9ba2e6beb682a825a76f5fa34cd0702e7d 100644
 --- a/src/common/fs/path_util.cpp
 +++ b/src/common/fs/path_util.cpp
-@@ -177,6 +177,7 @@ public:
+@@ -182,6 +182,7 @@ public:
          GenerateEdenPath(EdenPath::TASDir, eden_path / TAS_DIR);
          GenerateEdenPath(EdenPath::IconsDir, eden_path / ICONS_DIR);
          GenerateEdenPath(EdenPath::StreamlineDir, eden_path / STREAMLINE_DIR);
@@ -1854,10 +1682,10 @@ index a075dcf0a7068bdd52b01995d63331a553fd223e..6000777359491b3068869bbea1d1f32c
          GenerateEdenPath(EdenPath::ConfigDir, eden_path_config);
          // cache
 diff --git a/src/common/fs/path_util.h b/src/common/fs/path_util.h
-index 73982636cda6cc16ffe18c15b1da77dd56f29f1e..a49e0e720c7e2d945e03d32ce76bf203acd0acf3 100644
+index 2765f759229c7128d37c17ef4bd2e1ca37c60898..f6b8d808a11da56650cc76f24b9966b4ceb28c4c 100644
 --- a/src/common/fs/path_util.h
 +++ b/src/common/fs/path_util.h
-@@ -35,6 +35,7 @@ enum class EdenPath {
+@@ -38,6 +38,7 @@ enum class EdenPath {
      TASDir,         // Where TAS scripts are stored.
      IconsDir,       // Where Icons for Windows shortcuts are stored.
      StreamlineDir,  // Where the user-supplied NVIDIA Streamline loader is stored.
@@ -2741,10 +2569,10 @@ index 0000000000000000000000000000000000000000..c65a5e188d4570785890e40b30ef842c
 +
 +} // namespace ExtensionHost
 diff --git a/src/hid_core/frontend/emulated_controller.cpp b/src/hid_core/frontend/emulated_controller.cpp
-index ffa540a1ad1ef8af56578e1d5b7d2505c5dc1d0d..8dc076432da1e927ff00296a0807d0b769722b01 100644
+index f88545543c4e9d256ceebe62dc83245eb1fac4a3..ffbcd7addfb1ff6009a95434fb0c70d6e51444fe 100644
 --- a/src/hid_core/frontend/emulated_controller.cpp
 +++ b/src/hid_core/frontend/emulated_controller.cpp
-@@ -120,13 +120,42 @@ void EmulatedController::ReloadFromSettings() {
+@@ -123,13 +123,42 @@ void EmulatedController::ReloadFromSettings() {
      }
  
      Disconnect();
@@ -2788,7 +2616,7 @@ index ffa540a1ad1ef8af56578e1d5b7d2505c5dc1d0d..8dc076432da1e927ff00296a0807d0b7
  void EmulatedController::ReloadColorsFromSettings() {
      const auto player_index = Service::HID::NpadIdTypeToIndex(npad_id_type);
      const auto& player = Settings::values.players.GetValue()[player_index];
-@@ -633,6 +662,11 @@ bool EmulatedController::IsConfiguring() const {
+@@ -636,6 +665,11 @@ bool EmulatedController::IsConfiguring() const {
  
  void EmulatedController::SaveCurrentConfig() {
      const auto player_index = Service::HID::NpadIdTypeToIndex(npad_id_type);
@@ -2801,10 +2629,10 @@ index ffa540a1ad1ef8af56578e1d5b7d2505c5dc1d0d..8dc076432da1e927ff00296a0807d0b7
      player.connected = is_connected;
      player.controller_type = MapNPadToSettingsType(npad_type);
 diff --git a/src/hid_core/frontend/emulated_controller.h b/src/hid_core/frontend/emulated_controller.h
-index 2eee975690e82c94ffaa1d6e755a304cccf08792..388d612dcf7a6fa9f2614108129ce5f5c0879750 100644
+index db0f470b6e244623987889c3f5272740c9879789..0c5b0e254a3afd96c6390e3103aa608c9eedfbca 100644
 --- a/src/hid_core/frontend/emulated_controller.h
 +++ b/src/hid_core/frontend/emulated_controller.h
-@@ -189,6 +189,14 @@ struct ControllerUpdateCallback {
+@@ -192,6 +192,14 @@ struct ControllerUpdateCallback {
      bool is_npad_service;
  };
  
@@ -2819,7 +2647,7 @@ index 2eee975690e82c94ffaa1d6e755a304cccf08792..388d612dcf7a6fa9f2614108129ce5f5
  class EmulatedController {
  public:
      /**
-@@ -282,6 +290,16 @@ public:
+@@ -285,6 +293,16 @@ public:
      /// Reverts any mapped changes made that weren't saved
      void RestoreConfig();
  
@@ -2836,7 +2664,7 @@ index 2eee975690e82c94ffaa1d6e755a304cccf08792..388d612dcf7a6fa9f2614108129ce5f5
      /// Returns a vector of mapped devices from the mapped button and stick parameters
      std::vector<Common::ParamPackage> GetMappedDevices() const;
  
-@@ -652,6 +670,12 @@ private:
+@@ -655,6 +673,12 @@ private:
  
      std::optional<InjectedInput> Injected() const;
  
@@ -3373,12 +3201,12 @@ index 3b33ef30eb4f83fb7bd19bfeb9e48a13f5a2de54..e7a055e5f08007266806f675fa80a99c
       * Returns all available input devices that this Factory can create a new device with.
       * Each returned ParamPackage should have a `display` field used for display, a `engine` field
 diff --git a/src/tests/CMakeLists.txt b/src/tests/CMakeLists.txt
-index d38658d6a9e866b75cd0b86ec1642f213e233ddb..0c5204a1ac7af0948d05dd6295c0b3072198435f 100644
+index e753f9a5f1a80c136db0177f1833e8ba18ee8e84..4f4bba7512019afebbb3fdd3266e4e60c4613ba2 100644
 --- a/src/tests/CMakeLists.txt
 +++ b/src/tests/CMakeLists.txt
-@@ -59,11 +59,23 @@ add_executable(tests
-     video_core/shader_attributes.cpp
+@@ -113,6 +113,10 @@ add_executable(tests
      video_core/indirect_reset.cpp
+     video_core/ocarina_upscale.cpp
      input_common/calibration_configuration_job.cpp
 +    input_common/extension_input.cpp
 +    input_common/input_override.cpp
@@ -3387,9 +3215,17 @@ index d38658d6a9e866b75cd0b86ec1642f213e233ddb..0c5204a1ac7af0948d05dd6295c0b307
  )
  
  create_target_directory_groups(tests)
+@@ -125,12 +129,20 @@ if (ENABLE_UPDATE_CHECKER)
+         ../frontend_common/update_installer.cpp)
+ endif()
  
 -target_link_libraries(tests PRIVATE common core input_common video_core)
 +target_link_libraries(tests PRIVATE common core input_common video_core extension_host)
+ 
+ if (ENABLE_MCP_SERVER)
+     target_sources(tests PRIVATE mcp/protocol.cpp)
+     target_link_libraries(tests PRIVATE mcp)
+ endif()
 +
 +# A minimal extension for the extension_host loader tests.
 +add_library(test_extension MODULE extension_host/test_extension.c)
@@ -3851,10 +3687,10 @@ index 0000000000000000000000000000000000000000..1ca9dbb838b76db17f6a48baa042f7af
 +    player = saved_player;
 +}
 diff --git a/src/yuzu/CMakeLists.txt b/src/yuzu/CMakeLists.txt
-index 2fd0bd1d3c419a50e8652f9ad58d5580f6e9b83c..94536859d57ca0dfa1d4a6b42e425c853013c1ee 100644
+index aad40f05991299c52ad34cc42dece8424c19ad2d..7b0f8b94ae3b5c06ac25f6ed569deaae2f316d4c 100644
 --- a/src/yuzu/CMakeLists.txt
 +++ b/src/yuzu/CMakeLists.txt
-@@ -485,4 +485,16 @@ endif()
+@@ -505,4 +505,16 @@ endif()
  # Remember that the linker is incredibly stupid.
  target_link_libraries(yuzu PRIVATE OpenSSL::SSL OpenSSL::Crypto SDL3::SDL3)
  
@@ -5840,10 +5676,10 @@ index 0000000000000000000000000000000000000000..d1e65218d490a13a1bbe1179a762bede
 +
 +} // namespace Extensions
 diff --git a/src/yuzu/main.cpp b/src/yuzu/main.cpp
-index 3a8b28e5870a625e871107b48418b7e0ac548b34..7aaae125fa2624136d252311199cdead82c45426 100644
+index 9818725b94f06b413a538c67abe47df971a21f46..00e15c4b7d3df749e021eee2f31f24db959e93f0 100644
 --- a/src/yuzu/main.cpp
 +++ b/src/yuzu/main.cpp
-@@ -32,6 +32,9 @@
+@@ -38,6 +38,9 @@
  #endif
  
  #include "main_window.h"
@@ -5851,9 +5687,9 @@ index 3a8b28e5870a625e871107b48418b7e0ac548b34..7aaae125fa2624136d252311199cdead
 +#include "yuzu/extensions/extension_manager.h"
 +#endif
  
- #ifdef _WIN32
- #include <QScreen>
-@@ -264,6 +267,13 @@ int main(int argc, char* argv[]) {
+ #ifdef YUZU_CRASH_DUMPS
+ #include "yuzu/breakpad.h"
+@@ -276,6 +279,13 @@ int main(int argc, char* argv[]) {
      QApplication::setStyle(QStringLiteral("windowsvista"));
  #endif
  
@@ -5867,7 +5703,7 @@ index 3a8b28e5870a625e871107b48418b7e0ac548b34..7aaae125fa2624136d252311199cdead
      QApplication app(argc, argv);
  
  #ifdef _WIN32
-@@ -286,6 +296,9 @@ int main(int argc, char* argv[]) {
+@@ -298,6 +308,9 @@ int main(int argc, char* argv[]) {
      setlocale(LC_ALL, "C");
  
      MainWindow main_window{has_broken_vulkan};
@@ -5878,10 +5714,10 @@ index 3a8b28e5870a625e871107b48418b7e0ac548b34..7aaae125fa2624136d252311199cdead
      main_window.show();
  
 diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
-index 9b3170ed7e036d4e2f05f7d5fe86ec47fe350864..6c50729cfe867404ca11da7a6e66535ec22b4748 100644
+index ab0f2976bb3e788818bce70419b03db18522bf3d..63557a448cfcd4059834214b78c811e0d07f42c5 100644
 --- a/src/yuzu/main_window.cpp
 +++ b/src/yuzu/main_window.cpp
-@@ -290,6 +290,11 @@ static void RemoveTitlebarFilter() {
+@@ -311,6 +311,11 @@ static void RemoveTitlebarFilter() {
  #include "yuzu/breakpad.h"
  #endif
  
@@ -5893,7 +5729,7 @@ index 9b3170ed7e036d4e2f05f7d5fe86ec47fe350864..6c50729cfe867404ca11da7a6e66535e
  using namespace Common::Literals;
  
  #include "qt_common/discord/discord.h"
-@@ -610,6 +615,16 @@ void MainWindow::AmiiboSettingsRequestExit() {
+@@ -1045,6 +1050,16 @@ void MainWindow::AmiiboSettingsRequestExit() {
  
  void MainWindow::ControllerSelectorReconfigureControllers(
      const Core::Frontend::ControllerParameters& parameters) {
@@ -5910,10 +5746,10 @@ index 9b3170ed7e036d4e2f05f7d5fe86ec47fe350864..6c50729cfe867404ca11da7a6e66535e
      controller_applet =
          new QtControllerSelectorDialog(this, parameters, input_subsystem.get(), *QtCommon::system);
      SCOPE_EXIT {
-@@ -3587,6 +3602,16 @@ void MainWindow::ToggleShowGameName() {
+@@ -4126,6 +4141,16 @@ void MainWindow::OnConfigureProfiles() {
  }
  
- void MainWindow::OnConfigure() {
+ void MainWindow::OpenConfigureDialog(bool select_profiles) {
 +#ifdef ENABLE_EXTENSIONS
 +    if (extension_manager != nullptr) {
 +        extension_manager->SuspendAssignments();
@@ -5927,7 +5763,7 @@ index 9b3170ed7e036d4e2f05f7d5fe86ec47fe350864..6c50729cfe867404ca11da7a6e66535e
      const auto old_theme = UISettings::values.theme;
      const bool old_discord_presence = UISettings::values.enable_discord_presence.GetValue();
      const auto old_language_index = Settings::values.language_index.GetValue();
-@@ -3879,12 +3904,57 @@ void MainWindow::OnToggleGraphicsAPI() {
+@@ -4444,12 +4469,57 @@ void MainWindow::OnToggleGraphicsAPI() {
      UpdateAPIText();
  }
  
@@ -5985,9 +5821,9 @@ index 9b3170ed7e036d4e2f05f7d5fe86ec47fe350864..6c50729cfe867404ca11da7a6e66535e
      const auto v_file = Core::GetGameFileFromPath(QtCommon::vfs, file_name);
  
      Settings::SetConfiguringGlobal(false);
-@@ -5058,6 +5128,12 @@ void MainWindow::closeEvent(QCloseEvent* event) {
-     }
-     LOG_INFO(Frontend, "Closing frontend after emulation cleanup");
+@@ -5798,6 +5868,12 @@ void MainWindow::closeEvent(QCloseEvent* event) {
+     StopMcpServer();
+ #endif
  
 +#ifdef ENABLE_EXTENSIONS
 +    if (extension_manager != nullptr) {
@@ -5999,10 +5835,10 @@ index 9b3170ed7e036d4e2f05f7d5fe86ec47fe350864..6c50729cfe867404ca11da7a6e66535e
      game_list->SaveInterfaceLayout();
      UISettings::SaveWindowState();
 diff --git a/src/yuzu/main_window.h b/src/yuzu/main_window.h
-index 4da66cebda4f492ca0cf70fffaea959fdb162523..9a6acdb8d516ec9cef9d4b75a2c4ff94f4767340 100644
+index e4c0bfdd5d7d27da7d83dafab5e60761a07a7c86..3ba4667663258cba157c1bc50f0f00b0873c2ac2 100644
 --- a/src/yuzu/main_window.h
 +++ b/src/yuzu/main_window.h
-@@ -132,6 +132,10 @@ namespace Ui {
+@@ -138,6 +138,10 @@ namespace Ui {
  class MainWindow;
  }
  
@@ -6013,7 +5849,7 @@ index 4da66cebda4f492ca0cf70fffaea959fdb162523..9a6acdb8d516ec9cef9d4b75a2c4ff94
  enum class EmulatedDirectoryTarget {
      NAND,
      SDMC,
-@@ -180,6 +184,9 @@ public:
+@@ -194,6 +198,9 @@ public:
  
      std::filesystem::path GetShortcutPath(QtCommon::Game::ShortcutTarget target);
  
@@ -6023,7 +5859,7 @@ index 4da66cebda4f492ca0cf70fffaea959fdb162523..9a6acdb8d516ec9cef9d4b75a2c4ff94
  signals:
  
      /**
-@@ -576,6 +583,8 @@ private:
+@@ -642,6 +649,8 @@ private:
      // Debugger panes
      ControllerDialog* controller_dialog = nullptr;
  

@@ -16,9 +16,9 @@ on:
         required: true
         default: 'https://github.com/Eglantine-Community/Eglantine.git'
       git_ref:
-        description: 'Branch or tag to build'
+        description: 'Branch, tag, or commit SHA to build'
         required: true
-        default: 'nx2'
+        default: 'e1b46769125213316265de67fdd8cfaf50f9fdc8'
       steam_app_id:
         description: 'Default Steam App ID for the Remote Play Together extension (changeable later in Eglantine). It must belong to you or be explicitly authorized.'
         required: true
@@ -44,7 +44,7 @@ jobs:
         shell: powershell
     env:
       REPOSITORY_URL: ${{ github.event.inputs.repository_url || vars.EGLANTINE_BUILD_REPO_URL || 'https://github.com/Eglantine-Community/Eglantine.git' }}
-      GIT_REF: ${{ github.event.inputs.git_ref || vars.EGLANTINE_BUILD_REF || 'nx2' }}
+      GIT_REF: ${{ github.event.inputs.git_ref || vars.EGLANTINE_BUILD_REF || 'e1b46769125213316265de67fdd8cfaf50f9fdc8' }}
       STEAM_APP_ID: ${{ github.event.inputs.steam_app_id || vars.STEAM_APP_ID || '480' }}
       RELEASE_NAME: ${{ github.event.inputs.release_name || vars.EGLANTINE_BUILD_RELEASE_NAME || format('Eglantine Remote Play {0}', github.run_number) }}
     steps:
@@ -86,7 +86,7 @@ jobs:
           $config = [ordered]@{
             RepositoryUrl = $env:REPOSITORY_URL
             GitRef = $env:GIT_REF
-            GitRefKind = 'branch'
+            GitRefKind = ''
             QtDir = ''
             VulkanSdk = ''
             Workspace = $workspace

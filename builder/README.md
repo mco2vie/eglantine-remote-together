@@ -62,14 +62,14 @@ When the user leaves the Qt and Vulkan folders empty (the default), `Build-Steam
 
 ## What the patch contains
 
-No Steamworks SDK is needed at build time. [`payload/steam-remote-play-together.patch`](payload/steam-remote-play-together.patch) is the diff from upstream `nx2` (`6be10b5`) to:
+No Steamworks SDK is needed at build time. [`payload/steam-remote-play-together.patch`](payload/steam-remote-play-together.patch) is the diff from upstream `nx2` (`e1b4676`) to:
 
 1. Eglantine's extension system: commit `357ba63` of the [`extensions` branch of damienjacinto/Eglantine](https://github.com/damienjacinto/Eglantine/tree/extensions).
 2. `extensions/CMakeLists.txt` plus `extensions/remote_play_together/`, the [Steam Remote Play Together extension](https://github.com/damienjacinto/eglantine-remote-play-together) at tag `v0.0.3` (without its copy of `include/`, since the in-tree build uses `eglantine_extension_api`). One builder-only change: `STEAM_REMOTE_PLAY_APPID` sets the extension's default App ID (`RPT_DEFAULT_APP_ID`, otherwise 480).
 
 The builder configures with `-DENABLE_EXTENSIONS=ON -DEGLANTINE_BUILD_EXTENSIONS=ON -DSTEAM_API_LIBRARY=<steam_api64.dll>`, builds the `yuzu` and `remote-play-together` targets, and copies `bin\extensions\dev.eglantine.remote-play-together\` into the output folder.
 
-To update the patch, rebuild that tree inside Git with LF line endings (for example with a temporary `GIT_INDEX_FILE`, `read-tree`, `hash-object -w --no-filters` and `update-index`, so `core.autocrlf` cannot touch it), run `git diff --binary --full-index 6be10b5 <tree>`, check it with `git apply --cached --check` on the target branch, then update `$ExpectedPatchSha256` in `Build-SteamRemotePlay.ps1` and copy it to `site/downloads/`.
+To update the patch, rebuild that tree inside Git with LF line endings (for example with a temporary `GIT_INDEX_FILE`, `read-tree`, `hash-object -w --no-filters` and `update-index`, so `core.autocrlf` cannot touch it), run `git diff --binary --full-index e1b46769125213316265de67fdd8cfaf50f9fdc8 <tree>`, check it with `git apply --cached --check` on the target commit, then update `$ExpectedPatchSha256` in `Build-SteamRemotePlay.ps1`.
 
 When the user ticks *Install the Microsoft C++ compiler for me*, it downloads Microsoft's `vs_BuildTools.exe` from `aka.ms`, refuses it unless its Authenticode signature is valid and from Microsoft Corporation, and installs the VCTools workload with CMake (one UAC prompt). Update the versions and hashes in both `Build-SteamRemotePlay.ps1` and `Check-Requirements.ps1` together.
 
