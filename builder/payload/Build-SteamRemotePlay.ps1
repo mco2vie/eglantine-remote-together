@@ -19,7 +19,7 @@ $BuilderVersion = '2.0.0'
 # commit 357ba63) and the Steam Remote Play Together extension
 # (damienjacinto/eglantine-remote-play-together, tag v0.0.3) in extensions/remote_play_together.
 # The extension loads Steam's runtime library at runtime, so no Steamworks SDK is needed.
-$ExpectedPatchSha256 = '28cbdfdac7ff064194c0701514f5b85291d3aefb1771b8acb6b8c9a288ecf20b'
+$ExpectedPatchSha256 = 'baa7c5532054859cb9f52fccd16daccb731160fd0b6aed797221b04c488cc620'
 # The app ID must be one you own or are explicitly authorized to use, and configured for
 # Remote Play Together. This builder does not grant permission to use another game's App ID.
 # The App ID can be changed later from Eglantine's Multiplayer menu.
